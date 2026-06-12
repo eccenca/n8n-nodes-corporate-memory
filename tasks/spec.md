@@ -21,7 +21,9 @@ queries, and run saved (parameterized) catalog queries / "template reports".
 ## 2. Goals / Non-Goals
 
 **In scope (v1):**
-- Corporate Memory credential type, **client-credentials only** (Base URL, Client ID, Client Secret).
+- Corporate Memory credential type supporting **both** OAuth2 grants:
+  **client-credentials** and **password** (Base URL, Client ID, Client
+  Secret, and Username/Password for the password grant).
 - Start a workflow with an optional payload and get the optional result.
 
 **In scope (v2):**
@@ -84,30 +86,41 @@ JWT); DI declares no scheme but production requires the same `Authorization: Bea
 
 ## 4. Authentication & credential design (→ `B2`, `B3`, `B4`)
 
-Single credential `CorporateMemoryApi` implementing the **OAuth2 client-credentials** grant.
+Single credential `CorporateMemoryApi` supporting **both** OAuth2 flows
+CMEM/Keycloak offer: **`client_credentials`** and **`password`**
+(resource-owner). A `grantType` selector switches the relevant fields.
 
-**Decision (`R1`):** ship a **custom token helper** rather than `extends: ['oAuth2Api']`. n8n's
-generic OAuth2 *client-credentials* grant is currently unreliable on self-hosted n8n
-([n8n#16857](https://github.com/n8n-io/n8n/issues/16857)) and is awkward to exercise headlessly in
-the credential test. The custom helper fetches and caches the JWT ourselves. The `oAuth2Api`
-variant is kept as a documented `v.later` option (`B15`) to adopt once upstream is fixed.
+**Decision (`R1`):** ship a **custom token helper** rather than
+`extends: ['oAuth2Api']`. n8n's generic OAuth2 grants are unreliable on
+self-hosted n8n ([n8n#16857](https://github.com/n8n-io/n8n/issues/16857))
+and awkward to exercise headlessly in the credential test. The custom
+helper fetches and caches the JWT ourselves and handles both grants. The
+`oAuth2Api` variant is kept as a documented `v.later` option (`B15`) to
+adopt once upstream is fixed.
 
 **Credential fields:**
 
 | Field | Type | Default / notes |
 |-------|------|-----------------|
+| `grantType` — Grant Type | options | `client_credentials` (default) or `password`; controls which fields below are shown. |
 | `baseUrl` — CMEM Base URL | string | e.g. `https://cmem.example.com` (trailing slash stripped in helper). |
 | `clientId` — OAuth Client ID | string | required. |
-| `clientSecret` — OAuth Client Secret | string (password) | required. |
+| `clientSecret` — OAuth Client Secret | string (password) | required for `client_credentials`; optional for `password` (public Keycloak client). |
+| `username` — Username | string | shown/required for the `password` grant only. |
+| `password` — Password | string (password) | shown/required for the `password` grant only. |
 | `tokenUrl` — OAuth Token URL | string | default `={{$credentials.baseUrl}}/auth/realms/cmem/protocol/openid-connect/token`; overridable (Keycloak may be a separate host/realm). |
 | `diBaseUrl` — DataIntegration Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataintegration`. |
 | `dpBaseUrl` — DataPlatform Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataplatform`. |
 
-**Token flow (`GenericFunctions.getToken`):** `POST {tokenUrl}` with
-`grant_type=client_credentials` (form-urlencoded) and HTTP Basic `clientId:clientSecret`; cache
-`{ token, expiresAt }` in a module-level map keyed by `clientId|clientSecret|tokenUrl`, refreshing
-~30s before `expires_in`. `cmemApiRequest()` resolves the component base, attaches
-`Authorization: Bearer`, and calls `this.helpers.httpRequest` (we manage the token, so
+**Token flow (`GenericFunctions.getToken`):** `POST {tokenUrl}`
+form-urlencoded. For `client_credentials`: `grant_type=client_credentials`
+with HTTP Basic `clientId:clientSecret`. For `password`:
+`grant_type=password&username=…&password=…` with `client_id` (and
+`client_secret` when the client is confidential). Cache `{ token,
+expiresAt }` in a module-level map keyed by `grantType|clientId|username|
+tokenUrl`, refreshing ~30s before `expires_in`. `cmemApiRequest()`
+resolves the component base, attaches `Authorization: Bearer`, and calls
+`this.helpers.httpRequest` (we manage the token, so
 `httpRequestWithAuthentication` is not needed).
 
 **Credential test (`B4`):** node-level `methods.credentialTest` → `getToken` then `GET
