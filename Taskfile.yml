@@ -1,0 +1,59 @@
+# Taskfile for n8n-nodes-eccenca-corporate-memory
+# https://taskfile.dev — wraps the @n8n/node-cli (n8n-node) lifecycle.
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  deps:
+    desc: Install dependencies
+    cmds:
+      - npm install
+
+  build:
+    desc: Compile the node package and copy icons into dist/
+    cmds:
+      - npm run build
+
+  dev:
+    desc: Run a local n8n instance with the node hot-reloaded (http://localhost:5678)
+    cmds:
+      - npm run dev
+
+  lint:
+    desc: Lint the credential and node sources
+    cmds:
+      - npm run lint
+
+  lint-fix:
+    desc: Lint and auto-fix (also runs prettier)
+    cmds:
+      - npm run lint:fix
+
+  test:
+    desc: Run the Jest unit tests
+    cmds:
+      - npm test
+
+  check:
+    desc: Run lint, tests and build (the same gates as CI)
+    cmds:
+      - task: lint
+      - task: test
+      - task: build
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf dist
+
+  release:
+    desc: Build, verify and publish to npm (uses n8n-node release / release-it)
+    deps:
+      - check
+    cmds:
+      - npm run release

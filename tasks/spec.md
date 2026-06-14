@@ -52,13 +52,16 @@ base URLs **must be configurable** (see §4).
 
 | Op | Method | Path | Notes |
 | ---- | -------- | ------ | ------- |
-| Execute (sync) | `POST` | `/dataintegration/workflow/workflows/{project}/{task}/executeOnPayload` | Request body `application/json` (object) **or** `application/xml` (string). Response `application/json` or `application/xml` (per `Accept`). Payload = workflow's variable **input**; response = variable **output**. Both optional. |
-| Execute (async) | `POST` | `/dataintegration/workflow/workflows/{project}/{task}/executeOnPayloadAsynchronous` | `201` + `StartActivityResponse` body + `Location` header → `.../execution/{executionId}`. |
-| Cancel | `DELETE` | `/dataintegration/workflow/workflows/{project}/{task}/execution/{executionId}` | `200` / `404`. |
+| Execute (sync) | `POST` | `/dataintegration/api/workflow/result/{project}/{workflow}` | Body **optional** = variable input (`Content-Type` per input MIME: JSON/XML/CSV). `Accept` = variable-output MIME (JSON/XML/CSV/N-Triples/XLSX). `200` + result, or **`204`** when the workflow has no variable output. |
+| Execute (async) | `POST` | `/dataintegration/api/workflow/executeAsync/{project}/{workflow}?output:type={mime}` | Body **optional**; `output:type` query (literal colon) **required**. `201` → `{ activityId, instanceId }`. |
+| List workflows | `GET` | `/dataintegration/api/workflow/info` | Array of `{ id, label, projectId, projectLabel, variableInputs[], variableOutputs[] }`. Empty `variableInputs`/`variableOutputs` ⇒ no payload / no result. Powers the project & workflow dropdowns. |
 
-> Open question `R2`: whether `executeOnPayload` requires the workflow to declare a variable
-> **output** dataset, and the behavior when there is none (empty `200` vs `204`). Handle empty
-> responses gracefully.
+> **Endpoint choice (`R2`, verified on docker.localhost).** `.../executeOnPayload[Asynchronous]`
+> *require* a request body (HTTP `415` without one), so they only fit workflows that mandate a
+> payload. We use `/api/workflow/result` (sync) and `/api/workflow/executeAsync` (async), which
+> accept an **optional** body and therefore cover every case: no input, input-only, output-only,
+> both. A workflow's **input and output MIME types are independent**. Async result-polling and
+> cancellation use the activity API and are deferred to `v.later` (`B16`).
 
 ### 3.2 SPARQL SELECT — DataPlatform (→ `B10`, `B11`)
 
@@ -115,21 +118,23 @@ adopt once upstream is fixed.
 | `diBaseUrl` — DataIntegration Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataintegration`. |
 | `dpBaseUrl` — DataPlatform Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataplatform`. |
 
-**Token flow (`GenericFunctions.getToken`):** `POST {tokenUrl}`
-form-urlencoded. For `client_credentials`: `grant_type=client_credentials`
-with HTTP Basic `clientId:clientSecret`. For `password`:
-`grant_type=password&username=…&password=…` with `client_id` (and
-`client_secret` when the client is confidential). Cache `{ token,
-expiresAt }` in a module-level map keyed by `grantType|clientId|username|
-tokenUrl`, refreshing ~30s before `expires_in`. `cmemApiRequest()`
-resolves the component base, attaches `Authorization: Bearer`, and calls
-`this.helpers.httpRequest` (we manage the token, so
-`httpRequestWithAuthentication` is not needed).
+**Token flow (`getCmemToken` in `GenericFunctions.ts`):** `POST {tokenUrl}`
+form-urlencoded. For `client_credentials`: `grant_type=client_credentials` with
+`client_id`/`client_secret` in the body. For `password`: `grant_type=password`
+plus `username`/`password` (and `client_id`, with `client_secret` when the client
+is confidential). The token is cached in a module-level map keyed by
+`grantType|clientId|username|tokenUrl`, refreshed ~30s before `expires_in`. The
+**credential** calls `getCmemToken` from `preAuthentication` and injects the token
+via `authenticate` as `Authorization: Bearer {{$credentials.sessionToken}}`. The
+**node** calls `cmemApiRequest()`, which resolves the component base, attaches the
+bearer token and uses `this.helpers.httpRequest`.
 
-**Credential test (`B4`):** node-level `methods.credentialTest` → `getToken` then `GET
-{dpBaseUrl}/api/userinfo` (fallback `GET {diBaseUrl}/api/workflow/info`, `R3`). Map failures to
-friendly messages distinguishing "token failed (check client id/secret/token URL)" from "token OK
-but API unreachable (check base URL / base path)".
+**Credential test (`B4`):** the credential ships a declarative `test` that GETs
+`{dpBaseUrl}/userinfo` (DataPlatform); `preAuthentication` fetches the token and
+`authenticate` injects the bearer, so both a failing token and an unreachable API
+surface in the n8n credential dialog. The test `baseURL` is derived from
+`$credentials.baseUrl` directly (not from `preAuthentication` output, which does
+not propagate into the test request's URL expression — see `R3`).
 
 ## 5. Node model (→ `B5`, `B6`, `B10`, `B12`, `B13`)
 
@@ -139,9 +144,8 @@ SPARQL row-flattening, and CSV parsing are clumsy declaratively and easier to un
 
 | Resource | Operation | Endpoint | Key parameters |
 | ---------- | ----------- | ---------- | ---------------- |
-| Workflow | Execute | §3.1 sync | `projectId`, `taskId`, `payloadType` (None/JSON/XML → Content-Type), `payload` (hidden when None), `acceptType` (JSON/XML), `splitOutput` toggle. |
-| Workflow | Execute Async | §3.1 async | as above; emits `{ executionId, location }`. |
-| Workflow | Cancel | §3.1 cancel | `projectId`, `taskId`, `executionId`. |
+| Workflow | Execute | §3.1 sync | `projectId`/`taskId` (dropdowns via `getProjects`/`getWorkflows` loadOptions), `payloadType` (None/JSON/XML/CSV → `Content-Type`) + payload field, `resultFormat` (JSON/XML/CSV/N-Triples → `Accept`), `splitOutput`. |
+| Workflow | Execute (Async) | §3.1 async | as above; `resultFormat` → `output:type`; emits `{ activityId, instanceId }`. |
 | SPARQL | Select Query | §3.2 | `query` (multiline), `defaultGraphUri`/`namedGraphUri` (multi), `base64encoded` toggle, `simplify` toggle. |
 | Query Catalog | List Reports | §3.3 list | optional `contextGraph`; one item per `CatalogQuery`. |
 | Query Catalog | Run Report | §3.3 perform | `queryIri` (dropdown via `getCatalogQueries` loadOptions), `substitutions` (fixedCollection of `placeholder`/`value` pairs + raw-JSON escape hatch), optional `contextGraph`/`fileName`, `parseCsv` toggle. |
@@ -150,9 +154,10 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 
 ## 6. Output data contracts (→ `B6`, `B11`, `B14`)
 
-- **Workflow Execute:** JSON response → one item (or split when an array, if `splitOutput`); XML
-  response → `{ data: "<xml…>" }`; empty output → `{}`.
-- **Workflow Execute Async:** `{ executionId, location }` (parsed from body + `Location` header).
+- **Workflow Execute:** `204`/no variable output → `{ executed: true, hasResult: false }`; JSON
+  output → one item (or one per element when `splitOutput` and the result is an array);
+  XML/CSV/N-Triples → `{ data: "<string>" }`.
+- **Workflow Execute (Async):** `{ activityId, instanceId }`.
 - **SPARQL Select:** one n8n item **per binding row**. `simplify` on → `{ var: value }` (string
   values, unbound vars omitted/`null`); off → `{ var: { type, value, datatype?, "xml:lang"? } }`.
   Carries `head.vars` for column order where useful.
@@ -163,7 +168,7 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 
 - Node uses the versioned-node pattern from the start (`version: [1]`, `defaultVersion: 1`) so
   future breaking changes bump the node version without breaking saved workflows.
-- **v1** ships the credential + `Workflow → Execute` (+ Async/Cancel) to prove the auth path
+- **v1** ships the credential + `Workflow → Execute` (+ Async) to prove the auth path
   end-to-end. **v2** adds `SPARQL` and `Query Catalog` resources — purely **additive** (new options
   and `execute` branches), so only the package semver minor increments, not the node `version`.
 - Package semver: `0.1.0` for v1 (pre-verification) → `1.0.0` once verified against a real CMEM.
@@ -173,8 +178,8 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 | ID | Risk / question | Mitigation |
 | ---- | ----------------- | ------------ |
 | `R1` | n8n generic OAuth2 *clientCredentials* is buggy ([#16857](https://github.com/n8n-io/n8n/issues/16857)). | Custom token helper (§4); revisit `oAuth2Api` via `B15`. |
-| `R2` | Does `executeOnPayload` require a variable output dataset? Empty-result behavior? | Verify on a real workflow; handle empty `200`/`204` gracefully. |
-| `R3` | DP `/api/userinfo` path may vary per deployment (used in credential test). | DI `/api/workflow/info` fallback. |
+| `R2` | **Resolved.** `executeOnPayload` 415s without a body; `/api/workflow/result` returns `204` when a workflow has no variable output (verified on docker.localhost). | Use `/api/workflow/result` (sync) + `/api/workflow/executeAsync` (async); `204` ⇒ `{ executed, hasResult: false }`. |
+| `R3` | **Resolved.** The DP user endpoint is `/dataplatform/userinfo` (verified on docker.localhost, returns the account); `/dataplatform/api/userinfo` 404s. Also: `preAuthentication` output does not reach the declarative test's `baseURL` expression. | Credential test GETs `/userinfo` with `baseURL` derived from `$credentials.baseUrl`. |
 | `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
 | `R5` | Report CSV quoting / newlines / encoding edge cases. | Quote-aware parser + unit fixtures (`B14`). |
 | `R6` | License: the n8n starter/verified nodes use **MIT**; eccenca's `cmemc` is Apache-2.0. | Apache-2.0 for internal/self-hosted use; switch to MIT if Creator-Portal verification (`R7`) is a goal. Confirm with eccenca. |

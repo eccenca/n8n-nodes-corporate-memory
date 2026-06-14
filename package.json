@@ -1,0 +1,67 @@
+{
+	"name": "n8n-nodes-eccenca-corporate-memory",
+	"version": "0.1.0",
+	"description": "n8n community node for eccenca Corporate Memory (CMEM): execute Data Integration workflows and (v2) run SPARQL queries and query-catalog reports.",
+	"license": "MIT",
+	"homepage": "https://gitlab.eccenca.com/rpietzsch/n8n-cn",
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"eccenca",
+		"cmem",
+		"corporate-memory",
+		"knowledge-graph",
+		"sparql",
+		"rdf"
+	],
+	"author": {
+		"name": "Rene Pietzsch",
+		"email": "rpietzsch@gmail.com"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://gitlab.eccenca.com/rpietzsch/n8n-cn.git"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"test": "jest",
+		"test:watch": "jest --watch",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/credentials/CorporateMemoryApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/CorporateMemory/CorporateMemory.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "*",
+		"@types/jest": "^29.5.12",
+		"@types/node": "^22.10.0",
+		"eslint": "9.29.0",
+		"jest": "^29.7.0",
+		"n8n-workflow": "*",
+		"prettier": "3.8.3",
+		"release-it": "20.2.0",
+		"ts-jest": "^29.2.5",
+		"typescript": "5.9.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	}
+}

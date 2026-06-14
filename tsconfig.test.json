@@ -1,0 +1,12 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"declaration": false,
+		"sourceMap": false,
+		"incremental": false,
+		"types": ["node", "jest"]
+	},
+	"include": ["credentials/**/*", "nodes/**/*", "test/**/*"]
+}
