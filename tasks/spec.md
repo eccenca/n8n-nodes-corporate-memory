@@ -67,7 +67,7 @@ base URLs **must be configurable** (see §4).
 
 | Op | Method | Path | Notes |
 | ---- | -------- | ------ | ------- |
-| Select | `GET` | `/dataplatform/proxy/{id}/sparql?query=<sparql>` | Use `id` = `default`. Optional query params: `default-graph-uri` (repeatable), `named-graph-uri` (repeatable), `base64encoded`. Send `Accept: application/sparql-results+json` for SELECT. |
+| Select | `GET` | `/dataplatform/proxy/default/sparql?query=<sparql>` | Optional repeatable `default-graph-uri` / `named-graph-uri`. `Accept: application/sparql-results+json`. Verified on docker.localhost. (`base64encoded` exists but is not exposed in v1.) |
 
 Response (SELECT) is the standard SPARQL JSON results shape:
 
@@ -80,8 +80,9 @@ Response (SELECT) is the standard SPARQL JSON results shape:
 
 | Op | Method | Path | Notes |
 | ---- | -------- | ------ | ------- |
-| List reports | `GET` | `/dataplatform/api/querycatalog` | Returns `CatalogQuery[]`: `{ iri, labels, queryText, queryTypes }`. Optional `langPref[]`, `contextGraph`. Powers a `loadOptions` dropdown. |
-| Run report | `GET`/`POST` | `/dataplatform/api/queries/reports/perform?queryIri=<iri>&substitutions=<json>&contextGraph=<g>&fileName=<n>` | `substitutions` is a **JSON-encoded map** of `placeholder → value`; every placeholder in the saved query must be set. Response `text/csv`. Use `POST` when the substitutions map is large (URL length). |
+| List catalog graphs | `GET` | `/dataplatform/proxy/default/sparql` | SPARQL `COUNT(?qry) WHERE ?qry a shui:SparqlQuery` grouped by `?graph` (+ `rdfs:label`). Queries live in **several** catalog graphs; this matches CMEM's own selector. Powers `getQueryCatalogs`. Verified: 4 catalogs on docker.localhost. |
+| List queries | `GET` | `/dataplatform/api/querycatalog?contextGraph=<graph>` | Per-catalog-graph `{ payload: CatalogQuery[] }`; each `{ iri, labels[], descriptions[], queryText, queryTypes[] }`, `queryText` may contain `{{placeholder}}`. The node lists across all catalog graphs (or one) and tags each item with its `catalogGraph`. Powers `getCatalogQueries`. |
+| Run report | `GET` | `/dataplatform/api/queries/reports/perform?queryIri=<iri>&substitutions=<json>&contextGraph=<g>` | `substitutions` is a **JSON-encoded map** of `placeholder → value`. Response is **`text/csv` only** (`406` otherwise). `perform` runs **any** catalog query by IRI. Parameter handover verified on docker.localhost. |
 
 ### 3.4 Authentication endpoint
 
@@ -146,9 +147,9 @@ SPARQL row-flattening, and CSV parsing are clumsy declaratively and easier to un
 | ---------- | ----------- | ---------- | ---------------- |
 | Workflow | Execute | §3.1 sync | `projectId`/`taskId` (dropdowns via `getProjects`/`getWorkflows` loadOptions), `payloadType` (None/JSON/XML/CSV → `Content-Type`) + payload field, `resultFormat` (JSON/XML/CSV/N-Triples → `Accept`), `splitOutput`. |
 | Workflow | Execute (Async) | §3.1 async | as above; `resultFormat` → `output:type`; emits `{ activityId, instanceId }`. |
-| SPARQL | Select Query | §3.2 | `query` (multiline), `defaultGraphUri`/`namedGraphUri` (multi), `base64encoded` toggle, `simplify` toggle. |
-| Query Catalog | List Reports | §3.3 list | optional `contextGraph`; one item per `CatalogQuery`. |
-| Query Catalog | Run Report | §3.3 perform | `queryIri` (dropdown via `getCatalogQueries` loadOptions), `substitutions` (fixedCollection of `placeholder`/`value` pairs + raw-JSON escape hatch), optional `contextGraph`/`fileName`, `parseCsv` toggle. |
+| SPARQL | Select Query | §3.2 | `query` (multiline), `simplify` toggle, Options: `defaultGraphUri`/`namedGraphUri` (multi). |
+| Query Catalog | List Queries | §3.3 list | `catalogGraph` (dropdown via `getQueryCatalogs`, default All); one item per saved query incl. its `catalogGraph`. |
+| Query Catalog | Run Report | §3.3 perform | `catalogGraph` (scopes the picker), `queryIri` (dropdown via `getCatalogQueries`, depends on `catalogGraph`), `substitutions` (fixedCollection of name/value pairs + raw-JSON escape hatch), Options: `contextGraph`, `parseCsv` toggle. |
 
 Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 
@@ -159,8 +160,8 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
   XML/CSV/N-Triples → `{ data: "<string>" }`.
 - **Workflow Execute (Async):** `{ activityId, instanceId }`.
 - **SPARQL Select:** one n8n item **per binding row**. `simplify` on → `{ var: value }` (string
-  values, unbound vars omitted/`null`); off → `{ var: { type, value, datatype?, "xml:lang"? } }`.
-  Carries `head.vars` for column order where useful.
+  values, unbound vars omitted); off → `{ var: { type, value, datatype?, "xml:lang"? } }`. ASK →
+  `{ boolean }`.
 - **Run Report:** CSV parsed (quote/newline-aware, header row = keys) → one item per data row;
   `parseCsv` off → `{ csv: "<string>" }` (optionally binary using `fileName`).
 
@@ -181,7 +182,7 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 | `R2` | **Resolved.** `executeOnPayload` 415s without a body; `/api/workflow/result` returns `204` when a workflow has no variable output (verified on docker.localhost). | Use `/api/workflow/result` (sync) + `/api/workflow/executeAsync` (async); `204` ⇒ `{ executed, hasResult: false }`. |
 | `R3` | **Resolved.** The DP user endpoint is `/dataplatform/userinfo` (verified on docker.localhost, returns the account); `/dataplatform/api/userinfo` 404s. Also: `preAuthentication` output does not reach the declarative test's `baseURL` expression. | Credential test GETs `/userinfo` with `baseURL` derived from `$credentials.baseUrl`. |
 | `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
-| `R5` | Report CSV quoting / newlines / encoding edge cases. | Quote-aware parser + unit fixtures (`B14`). |
+| `R5` | **Addressed.** Report CSV quoting / newlines / escaped quotes. | Quote-aware `parseCsv` + unit tests (`B14`); verified on a 52-row report on docker.localhost. |
 | `R6` | License: the n8n starter/verified nodes use **MIT**; eccenca's `cmemc` is Apache-2.0. | Apache-2.0 for internal/self-hosted use; switch to MIT if Creator-Portal verification (`R7`) is a goal. Confirm with eccenca. |
 | `R7` | n8n verified-community-node requirements (no runtime deps, GitHub-Actions provenance publish). | Track in `B17`. |
 

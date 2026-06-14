@@ -3,10 +3,11 @@
 An [n8n](https://n8n.io) community node for
 [eccenca Corporate Memory (CMEM)](https://eccenca.com).
 
-This is **v1**: a Corporate Memory credential (OAuth2 client-credentials **and**
-password grants) and a **Corporate Memory** node that executes DataIntegration
-workflows. SPARQL SELECT queries and query-catalog "template reports" are planned
-for v2 — see [tasks/backlog.md](tasks/backlog.md).
+Provides a Corporate Memory credential (OAuth2 **client-credentials** and
+**password** grants) and a **Corporate Memory** node with three resources:
+**Workflow** (execute DataIntegration workflows), **SPARQL** (SELECT/ASK queries),
+and **Query Catalog** (list and run saved, parameterized queries). See
+[tasks/spec.md](tasks/spec.md) and [tasks/backlog.md](tasks/backlog.md).
 
 [Installation](#installation) · [Credentials](#credentials) ·
 [Operations](#operations) · [Development](#development)
@@ -38,13 +39,34 @@ DataPlatform API is reachable.
 
 ### Resource: Workflow
 
-- **Execute** — run a workflow synchronously on an optional payload
-  (`POST .../executeOnPayload`). Choose the payload type (None / JSON / XML) and
-  the result format (JSON / XML). Optionally split a JSON array result into one
+Project and Workflow are searchable dropdowns populated from your instance.
+
+- **Execute** — run a workflow synchronously (`POST /api/workflow/result/…`),
+  optionally with a payload. Pick the **Payload** content type (None / JSON / XML /
+  CSV) and the **Result Format** (JSON / XML / CSV / N-Triples) independently — they
+  need not match. A workflow with no variable output returns
+  `{ executed: true, hasResult: false }`; a JSON array result can be split into one
   item per element.
 - **Execute (Async)** — start a workflow execution
-  (`POST .../executeOnPayloadAsynchronous`); returns `{ executionId, location }`.
-- **Cancel** — cancel a running execution (`DELETE .../execution/{executionId}`).
+  (`POST /api/workflow/executeAsync?output:type=…`); returns `{ activityId, instanceId }`.
+
+### Resource: SPARQL
+
+- **Select Query** — run a SPARQL SELECT/ASK (`GET /proxy/default/sparql`) and get
+  one item per result row. **Simplify** returns just each variable's value; off
+  returns the full binding object (type, value, datatype, language). Optional
+  default/named graph URIs.
+
+### Resource: Query Catalog
+
+Queries live in one or more catalog graphs; a **Catalog Graph** dropdown (default
+*All Catalogs*) scopes the picker, mirroring CMEM's own catalog selector.
+
+- **List Queries** — list saved queries across the selected catalog(s); each item
+  carries its source `catalogGraph`.
+- **Run Report** — execute a saved query by IRI with **parameter substitutions**
+  (`{{placeholder}}` → value) and get the CSV result parsed into items
+  (`GET /api/queries/reports/perform`); toggle off to return the raw CSV string.
 
 ## Development
 

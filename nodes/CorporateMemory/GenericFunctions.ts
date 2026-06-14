@@ -202,3 +202,209 @@ export async function cmemApiRequest(
 
 	return requester.helpers.httpRequest(requestOptions);
 }
+
+// ---------------------------------------------------------------------------
+// v2 helpers: SPARQL result flattening, report substitutions, CSV parsing
+// ---------------------------------------------------------------------------
+
+interface SparqlBindingValue {
+	type: string;
+	value: string;
+	datatype?: string;
+	'xml:lang'?: string;
+}
+
+export interface SparqlSelectResult {
+	head?: { vars?: string[] };
+	results?: { bindings?: Array<Record<string, SparqlBindingValue>> };
+	boolean?: boolean;
+}
+
+/**
+ * Flatten a SPARQL SELECT/ASK result into n8n items (one per binding row).
+ * `simplify` true → `{ var: value }`; false → the full binding object per var.
+ * Unbound variables are simply absent from a row (SPARQL JSON omits them).
+ */
+export function flattenSparqlResult(result: SparqlSelectResult, simplify: boolean): IDataObject[] {
+	if (typeof result?.boolean === 'boolean') {
+		return [{ boolean: result.boolean }];
+	}
+	const bindings = result?.results?.bindings ?? [];
+	return bindings.map((row) => {
+		const item: IDataObject = {};
+		for (const [variable, binding] of Object.entries(row)) {
+			if (!binding) continue;
+			item[variable] = simplify ? binding.value : (binding as unknown as IDataObject);
+		}
+		return item;
+	});
+}
+
+export interface SubstitutionPair {
+	name: string;
+	value: string;
+}
+
+/** Build the `substitutions` map for a report from name/value pairs. */
+export function buildSubstitutions(pairs: SubstitutionPair[]): Record<string, string> {
+	const map: Record<string, string> = {};
+	for (const pair of pairs ?? []) {
+		if (pair?.name) {
+			map[pair.name] = pair.value ?? '';
+		}
+	}
+	return map;
+}
+
+/** Parse delimited CSV text (RFC-4180-ish: quotes, embedded commas/newlines). */
+export function parseCsv(text: string): IDataObject[] {
+	const rows = parseCsvRows(text);
+	if (rows.length === 0) {
+		return [];
+	}
+	const header = rows[0];
+	return rows.slice(1).map((cols) => {
+		const item: IDataObject = {};
+		header.forEach((name, index) => {
+			item[name] = cols[index] ?? '';
+		});
+		return item;
+	});
+}
+
+function parseCsvRows(text: string): string[][] {
+	const rows: string[][] = [];
+	let row: string[] = [];
+	let field = '';
+	let inQuotes = false;
+
+	for (let i = 0; i < text.length; i++) {
+		const char = text[i];
+		if (inQuotes) {
+			if (char === '"') {
+				if (text[i + 1] === '"') {
+					field += '"';
+					i++;
+				} else {
+					inQuotes = false;
+				}
+			} else {
+				field += char;
+			}
+		} else if (char === '"') {
+			inQuotes = true;
+		} else if (char === ',') {
+			row.push(field);
+			field = '';
+		} else if (char === '\n' || char === '\r') {
+			if (char === '\r' && text[i + 1] === '\n') {
+				i++;
+			}
+			row.push(field);
+			rows.push(row);
+			row = [];
+			field = '';
+		} else {
+			field += char;
+		}
+	}
+	if (field.length > 0 || row.length > 0) {
+		row.push(field);
+		rows.push(row);
+	}
+	return rows;
+}
+
+// ---------------------------------------------------------------------------
+// v2 helpers: query catalog graphs (queries can live in several catalog graphs)
+// ---------------------------------------------------------------------------
+
+/** SPARQL that finds every graph containing saved SPARQL query resources. */
+const GRAPHS_WITH_QUERIES_SPARQL =
+	'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
+	'SELECT ?graph ?label (COUNT(?qry) AS ?nrQueries) WHERE { GRAPH ?graph { ' +
+	'?qry a <https://vocab.eccenca.com/shui/SparqlQuery> . OPTIONAL { ?graph rdfs:label ?label } ' +
+	'} } GROUP BY ?graph ?label';
+
+/**
+ * List the graphs that contain saved SPARQL queries (the query catalogs), with
+ * their label. Mirrors Corporate Memory's own catalog selector, which is driven
+ * by the presence of `shui:SparqlQuery` resources rather than the graph type.
+ */
+export async function listQueryCatalogGraphs(
+	requester: CmemRequester,
+	credentials: CorporateMemoryCredentials,
+): Promise<Array<{ iri: string; label: string; count: number }>> {
+	const params = new URLSearchParams();
+	params.set('query', GRAPHS_WITH_QUERIES_SPARQL);
+	const result = (await cmemApiRequest(
+		requester,
+		credentials,
+		'dp',
+		'GET',
+		`/proxy/default/sparql?${params.toString()}`,
+		{ headers: { Accept: 'application/sparql-results+json' }, parseJson: true },
+	)) as SparqlSelectResult;
+
+	return (result?.results?.bindings ?? [])
+		.map((row) => ({
+			iri: row.graph?.value ?? '',
+			label: row.label?.value ?? '',
+			count: Number(row.nrQueries?.value ?? 0),
+		}))
+		.filter((graph) => graph.iri);
+}
+
+export interface CatalogQuerySummary {
+	iri: string;
+	label: string;
+	description: string;
+	queryText: string;
+	queryTypes: string[];
+	catalogGraph: string;
+}
+
+/**
+ * List saved catalog queries. With no `catalogGraph`, lists across every query
+ * catalog graph; otherwise restricts to that one.
+ */
+export async function listCatalogQueries(
+	requester: CmemRequester,
+	credentials: CorporateMemoryCredentials,
+	catalogGraph?: string,
+): Promise<CatalogQuerySummary[]> {
+	const graphs = catalogGraph
+		? [catalogGraph]
+		: (await listQueryCatalogGraphs(requester, credentials)).map((graph) => graph.iri);
+
+	const queries: CatalogQuerySummary[] = [];
+	for (const graph of graphs) {
+		const response = (await cmemApiRequest(
+			requester,
+			credentials,
+			'dp',
+			'GET',
+			`/api/querycatalog?contextGraph=${encodeURIComponent(graph)}`,
+			{ parseJson: true },
+		)) as {
+			payload?: Array<{
+				iri: string;
+				labels?: Array<{ value: string }>;
+				descriptions?: Array<{ value: string }>;
+				queryText?: string;
+				queryTypes?: string[];
+			}>;
+		};
+		for (const query of response.payload ?? []) {
+			queries.push({
+				iri: query.iri,
+				label: query.labels?.[0]?.value ?? query.iri,
+				description: query.descriptions?.[0]?.value ?? '',
+				queryText: query.queryText ?? '',
+				queryTypes: query.queryTypes ?? [],
+				catalogGraph: graph,
+			});
+		}
+	}
+	return queries;
+}

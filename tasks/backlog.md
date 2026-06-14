@@ -56,22 +56,26 @@
 
 ## v2 — SPARQL & Query Catalog
 
-- [ ] **B10 — SPARQL → Select Query** (→ §3.2, §5)
-  `query`, `defaultGraphUri`/`namedGraphUri` (repeatable), `base64encoded` toggle; `Accept:
-  application/sparql-results+json`.
-- [ ] **B11 — SPARQL result flattening** (→ §5, §6, §9)
+- [x] **B10 — SPARQL → Select Query** (→ §3.2, §5)
+  `GET /proxy/default/sparql?query=…` with `Accept: application/sparql-results+json`; optional
+  repeatable `default-graph-uri`/`named-graph-uri` (Options collection). Verified on docker.localhost.
+- [x] **B11 — SPARQL result flattening** (→ §5, §6, §9)
   `{head,results.bindings}` → one item per row; `simplify` toggle (string values vs full binding
-  objects); unbound-var handling. Unit test from a recorded fixture.
-- [ ] **B12 — Query Catalog → List Reports + loadOptions** (→ §3.3, §5)
-  `GET /api/querycatalog`; one item per `CatalogQuery`; `getCatalogQueries` loadOptions to populate
-  Run Report's `queryIri` dropdown.
-- [ ] **B13 — Query Catalog → Run Report (parameter handover)** (→ §3.3, §5)
-  `queryIri`, `substitutions` (fixedCollection `placeholder`/`value` pairs + raw-JSON escape hatch
-  → `buildSubstitutions()` JSON map), optional `contextGraph`/`fileName`; `GET`/`POST` switch by
-  payload size.
-- [ ] **B14 — CSV → items parser** (→ §5, §6, §9, `R5`)
-  Quote/newline-aware CSV parse (header row = keys); `parseCsv` toggle for raw/binary. Unit tests
-  for quoting/embedded-comma/newline edge cases.
+  objects); unbound vars omitted; ASK → `{ boolean }`. Unit-tested from a fixture.
+- [x] **B12 — Query Catalog → List Queries + catalog-graph awareness** (→ §3.3, §5)
+  Queries span multiple catalog graphs, discovered via a labelled `shui:SparqlQuery` SPARQL
+  (mirrors CMEM's catalog selector). `getQueryCatalogs` loadOptions lists those graphs; a
+  **Catalog Graph** selector (default = All Catalogs) scopes both List Queries and the
+  `getCatalogQueries` `queryIri` dropdown. List emits one item per saved query (`iri`, `label`,
+  `description`, `queryText`, `queryTypes`, `catalogGraph`). Verified on docker.localhost (4 catalogs).
+- [x] **B13 — Query Catalog → Run Report (parameter handover)** (→ §3.3, §5)
+  `GET /api/queries/reports/perform?queryIri=…&substitutions=<json>` — `substitutions` built from a
+  fixedCollection of name/value pairs (`buildSubstitutions()`) plus a raw-JSON escape hatch and
+  optional `contextGraph`. Parameter handover verified on docker.localhost.
+- [x] **B14 — CSV → items parser** (→ §5, §6, §9, `R5`)
+  Quote/newline-aware CSV parse (header row = keys) → one item per row; `Parse CSV Into Items`
+  toggle returns the raw CSV string instead. Unit-tested (quoting / embedded comma / newline /
+  escaped quotes).
 
 ## v.later
 

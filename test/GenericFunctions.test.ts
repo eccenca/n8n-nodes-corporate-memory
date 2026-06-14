@@ -1,12 +1,18 @@
 import {
+	buildSubstitutions,
 	cmemApiRequest,
 	clearCmemTokenCache,
+	flattenSparqlResult,
 	getCmemToken,
+	listCatalogQueries,
+	listQueryCatalogGraphs,
 	normalizeBaseUrl,
+	parseCsv,
 	resolveComponentBaseUrl,
 	resolveTokenUrl,
 	type CmemRequester,
 	type CorporateMemoryCredentials,
+	type SparqlSelectResult,
 } from '../nodes/CorporateMemory/GenericFunctions';
 
 function makeRequester(httpRequest: jest.Mock): CmemRequester {
@@ -173,5 +179,129 @@ describe('cmemApiRequest', () => {
 		);
 		expect(apiCall.headers.Authorization).toBe('Bearer TOK');
 		expect(apiCall.method).toBe('POST');
+	});
+});
+
+describe('flattenSparqlResult', () => {
+	const result: SparqlSelectResult = {
+		head: { vars: ['s', 'p', 'o'] },
+		results: {
+			bindings: [
+				{
+					s: { type: 'uri', value: 'http://ex/s1' },
+					p: { type: 'uri', value: 'http://ex/p1' },
+					o: { type: 'literal', value: 'hello', 'xml:lang': 'en' },
+				},
+				{
+					s: { type: 'uri', value: 'http://ex/s2' },
+					// p unbound for this row
+					o: { type: 'literal', value: '42', datatype: 'http://www.w3.org/2001/XMLSchema#integer' },
+				},
+			],
+		},
+	};
+
+	it('returns one item per row with simplified values', () => {
+		expect(flattenSparqlResult(result, true)).toEqual([
+			{ s: 'http://ex/s1', p: 'http://ex/p1', o: 'hello' },
+			{ s: 'http://ex/s2', o: '42' },
+		]);
+	});
+
+	it('returns full binding objects when not simplified', () => {
+		const rows = flattenSparqlResult(result, false);
+		expect(rows[0].o).toEqual({ type: 'literal', value: 'hello', 'xml:lang': 'en' });
+		expect(rows[1]).not.toHaveProperty('p');
+	});
+
+	it('handles ASK results', () => {
+		expect(flattenSparqlResult({ boolean: true }, true)).toEqual([{ boolean: true }]);
+	});
+});
+
+describe('buildSubstitutions', () => {
+	it('maps name/value pairs and skips entries without a name', () => {
+		expect(
+			buildSubstitutions([
+				{ name: 'graph', value: 'http://ex/g' },
+				{ name: '', value: 'ignored' },
+				{ name: 'limit', value: '10' },
+			]),
+		).toEqual({ graph: 'http://ex/g', limit: '10' });
+	});
+});
+
+describe('parseCsv', () => {
+	it('parses a header and rows into objects', () => {
+		expect(parseCsv('class,instances\nA,142\nB,90\n')).toEqual([
+			{ class: 'A', instances: '142' },
+			{ class: 'B', instances: '90' },
+		]);
+	});
+
+	it('handles quoted fields with commas, newlines and escaped quotes', () => {
+		const csv = 'name,note\n"Doe, John","line1\nline2"\n"a ""quote""",ok';
+		expect(parseCsv(csv)).toEqual([
+			{ name: 'Doe, John', note: 'line1\nline2' },
+			{ name: 'a "quote"', note: 'ok' },
+		]);
+	});
+
+	it('returns an empty array for empty input', () => {
+		expect(parseCsv('')).toEqual([]);
+	});
+});
+
+describe('query catalog graphs', () => {
+	beforeEach(() => clearCmemTokenCache());
+
+	it('listQueryCatalogGraphs finds graphs that contain SPARQL query resources', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce({
+				head: { vars: ['graph', 'label', 'nrQueries'] },
+				results: {
+					bindings: [
+						{
+							graph: { type: 'uri', value: 'g1' },
+							label: { type: 'literal', value: 'Catalog One' },
+							nrQueries: { type: 'literal', value: '5' },
+						},
+						{ graph: { type: 'uri', value: 'g2' }, nrQueries: { type: 'literal', value: '19' } },
+					],
+				},
+			});
+
+		const graphs = await listQueryCatalogGraphs(makeRequester(httpRequest), clientCreds);
+		expect(graphs).toEqual([
+			{ iri: 'g1', label: 'Catalog One', count: 5 },
+			{ iri: 'g2', label: '', count: 19 },
+		]);
+		expect(httpRequest.mock.calls[1][0].url).toContain('/proxy/default/sparql?query=');
+	});
+
+	it('listCatalogQueries merges across all catalog graphs and tags the source', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce({
+				results: {
+					bindings: [
+						{ graph: { type: 'uri', value: 'g1' }, nrQueries: { value: '1' } },
+						{ graph: { type: 'uri', value: 'g2' }, nrQueries: { value: '1' } },
+					],
+				},
+			})
+			.mockResolvedValueOnce({ payload: [{ iri: 'q1', labels: [{ value: 'Q1' }] }] })
+			.mockResolvedValueOnce({ payload: [{ iri: 'q2', labels: [{ value: 'Q2' }] }] });
+
+		const queries = await listCatalogQueries(makeRequester(httpRequest), clientCreds);
+		expect(
+			queries.map((query) => ({ iri: query.iri, label: query.label, catalogGraph: query.catalogGraph })),
+		).toEqual([
+			{ iri: 'q1', label: 'Q1', catalogGraph: 'g1' },
+			{ iri: 'q2', label: 'Q2', catalogGraph: 'g2' },
+		]);
 	});
 });

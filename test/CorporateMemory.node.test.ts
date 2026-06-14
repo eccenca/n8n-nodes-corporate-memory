@@ -228,4 +228,117 @@ describe('CorporateMemory.execute', () => {
 			'/api/workflow/executeAsync/p/t?output:type=application%2Fjson',
 		);
 	});
+
+	it('SPARQL Select emits one item per binding row', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce({
+				head: { vars: ['s'] },
+				results: {
+					bindings: [
+						{ s: { type: 'uri', value: 'http://ex/1' } },
+						{ s: { type: 'uri', value: 'http://ex/2' } },
+					],
+				},
+			});
+		const node = new CorporateMemory();
+
+		const result = await node.execute.call(
+			execContext(
+				{
+					resource: 'sparql',
+					operation: 'select',
+					query: 'SELECT ?s WHERE {?s ?p ?o}',
+					simplify: true,
+					sparqlOptions: {},
+				},
+				httpRequest,
+			),
+		);
+
+		expect(result[0].map((item) => item.json)).toEqual([
+			{ s: 'http://ex/1' },
+			{ s: 'http://ex/2' },
+		]);
+		expect(httpRequest.mock.calls[1][0].url).toContain(
+			'/dataplatform/proxy/default/sparql?query=',
+		);
+	});
+
+	it('Query Catalog List emits one item per saved query', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce({
+				payload: [{ iri: 'urn:q1', labels: [{ value: 'Q One' }], queryText: 'SELECT 1' }],
+			});
+		const node = new CorporateMemory();
+
+		const result = await node.execute.call(
+			execContext(
+				{ resource: 'queryCatalog', operation: 'list', catalogGraph: 'http://x/queries/' },
+				httpRequest,
+			),
+		);
+
+		expect(result[0][0].json).toMatchObject({
+			iri: 'urn:q1',
+			label: 'Q One',
+			queryText: 'SELECT 1',
+			catalogGraph: 'http://x/queries/',
+		});
+	});
+
+	it('Run Report sends substitutions and parses CSV into items', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce('class,instances\nA,142\nB,90\n');
+		const node = new CorporateMemory();
+
+		const result = await node.execute.call(
+			execContext(
+				{
+					resource: 'queryCatalog',
+					operation: 'runReport',
+					queryIri: 'urn:q1',
+					substitutions: { parameter: [{ name: 'graph', value: 'http://ex/g' }] },
+					reportOptions: {},
+				},
+				httpRequest,
+			),
+		);
+
+		expect(result[0].map((item) => item.json)).toEqual([
+			{ class: 'A', instances: '142' },
+			{ class: 'B', instances: '90' },
+		]);
+		const url = httpRequest.mock.calls[1][0].url as string;
+		expect(url).toContain('/api/queries/reports/perform?queryIri=urn%3Aq1');
+		expect(url).toContain('substitutions=');
+	});
+
+	it('Run Report can return the raw CSV string', async () => {
+		const httpRequest = jest
+			.fn()
+			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
+			.mockResolvedValueOnce('a,b\n1,2\n');
+		const node = new CorporateMemory();
+
+		const result = await node.execute.call(
+			execContext(
+				{
+					resource: 'queryCatalog',
+					operation: 'runReport',
+					queryIri: 'urn:q1',
+					substitutions: {},
+					reportOptions: { parseCsv: false },
+				},
+				httpRequest,
+			),
+		);
+
+		expect(result[0][0].json).toEqual({ data: 'a,b\n1,2\n' });
+	});
 });
