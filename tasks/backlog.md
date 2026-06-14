@@ -6,12 +6,20 @@
 
 ## v1 — Foundation & Workflow execution
 
-- [ ] **B1 — Scaffold the package** (→ §1, §5)
-  `package.json` (name `n8n-nodes-eccenca-corporate-memory`, keyword `n8n-community-node-package`,
-  `n8n` field listing the compiled credential + node), `tsconfig.json`, two eslint configs
-  (community + prepublish), `.prettierrc`, `gulpfile.js` (`build:icons`), `index.js` shim,
-  `README.md`, `LICENSE` (Apache-2.0, `R6`), `.gitignore`, `.npmignore`. Verify `npm run build`
-  produces `dist/`.
+- [ ] **B1 — Scaffold via `@n8n/node-cli` + `Taskfile.yml`** (→ §1, §5, §9)
+  Scaffold with `npm create @n8n/node` (programmatic template): generates
+  `package.json` (correct `n8n` field), `tsconfig`, eslint
+  (`eslint-plugin-n8n-nodes-base`) + prettier, the `n8n-node`
+  build/dev/lint/release scripts, and a provenance `publish.yml`. No gulp — the
+  CLI handles the build/icons. Set name `n8n-nodes-eccenca-corporate-memory`,
+  keyword `n8n-community-node-package`, `LICENSE` (`R6`), `README.md`,
+  `.gitignore`/`.npmignore`; keep the existing `.markdownlint.json`. Requires
+  Node.js v22+.
+  Add a **`Taskfile.yml`** ([go-task](https://taskfile.dev)) wrapping the
+  lifecycle + dependency targets to operate the project, each delegating to the
+  generated `n8n-node`/npm scripts: `deps` (install), `build`, `lint`,
+  `lint:fix`, `dev` (`n8n-node dev`, hot reload), `test`, `release`, `clean`,
+  and a `default` that lists targets. Verify `task build` produces `dist/`.
 - [ ] **B2 — `CorporateMemoryApi` credential** (→ §4)
   `grantType` selector for **both** `client_credentials` and `password`
   (resource-owner) flows. Fields: `baseUrl`, `clientId`,
@@ -38,8 +46,10 @@
 - [ ] **B8 — Unit tests: auth** (→ §9)
   `getToken` cache/expiry + error mapping.
 - [ ] **B9 — CI + local-dev docs** (→ §9, `R7`)
-  GitHub Actions: PR → build/lint/test; tag `v*` → `npm publish --provenance`. README section on
-  `npm link` into local n8n.
+  GitHub Actions from the scaffold: PR → build/lint/test; tag `v*` →
+  `n8n-node release` publishing to npm **with provenance** (mandatory for
+  community nodes from 2026-05-01). Document local dev via `task dev`
+  (`n8n-node dev`, hot reload) in the README + `Taskfile.yml` — no `npm link`.
 
 ## v2 — SPARQL & Query Catalog
 

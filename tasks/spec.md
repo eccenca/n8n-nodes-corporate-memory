@@ -13,7 +13,8 @@ queries, and run saved (parameterized) catalog queries / "template reports".
 
 - **Package name:** `n8n-nodes-eccenca-corporate-memory`
 - **Node displayName:** `Corporate Memory`
-- **License:** Apache-2.0 (matches eccenca's [`cmemc`](https://github.com/eccenca/cmemc)) — see `R6`
+- **License:** Apache-2.0 (matches eccenca's [`cmemc`](https://github.com/eccenca/cmemc)); MIT if pursuing n8n verification — see `R6`
+- **Tooling:** scaffolded with the official [`@n8n/node-cli`](https://www.npmjs.com/package/@n8n/node-cli) (`npm create @n8n/node`) and operated via a `Taskfile.yml` ([go-task](https://taskfile.dev)). Requires Node.js v22+.
 - **Motivation (Jira user story):** *As an automation engineer, in order to ingest data from my
   n8n workflows, I want a CMEM node implementation.* n8n has 1000+ community nodes; integrating
   CMEM extends both ecosystems.
@@ -21,12 +22,14 @@ queries, and run saved (parameterized) catalog queries / "template reports".
 ## 2. Goals / Non-Goals
 
 **In scope (v1):**
+
 - Corporate Memory credential type supporting **both** OAuth2 grants:
   **client-credentials** and **password** (Base URL, Client ID, Client
   Secret, and Username/Password for the password grant).
 - Start a workflow with an optional payload and get the optional result.
 
 **In scope (v2):**
+
 - SPARQL SELECT query → results processable as n8n items.
 - Query-catalog "template report" execution by IRI, **with parameter handover**.
 
@@ -48,7 +51,7 @@ base URLs **must be configurable** (see §4).
 ### 3.1 Workflow execution — DataIntegration (→ `B6`, `B7`)
 
 | Op | Method | Path | Notes |
-|----|--------|------|-------|
+| ---- | -------- | ------ | ------- |
 | Execute (sync) | `POST` | `/dataintegration/workflow/workflows/{project}/{task}/executeOnPayload` | Request body `application/json` (object) **or** `application/xml` (string). Response `application/json` or `application/xml` (per `Accept`). Payload = workflow's variable **input**; response = variable **output**. Both optional. |
 | Execute (async) | `POST` | `/dataintegration/workflow/workflows/{project}/{task}/executeOnPayloadAsynchronous` | `201` + `StartActivityResponse` body + `Location` header → `.../execution/{executionId}`. |
 | Cancel | `DELETE` | `/dataintegration/workflow/workflows/{project}/{task}/execution/{executionId}` | `200` / `404`. |
@@ -60,7 +63,7 @@ base URLs **must be configurable** (see §4).
 ### 3.2 SPARQL SELECT — DataPlatform (→ `B10`, `B11`)
 
 | Op | Method | Path | Notes |
-|----|--------|------|-------|
+| ---- | -------- | ------ | ------- |
 | Select | `GET` | `/dataplatform/proxy/{id}/sparql?query=<sparql>` | Use `id` = `default`. Optional query params: `default-graph-uri` (repeatable), `named-graph-uri` (repeatable), `base64encoded`. Send `Accept: application/sparql-results+json` for SELECT. |
 
 Response (SELECT) is the standard SPARQL JSON results shape:
@@ -73,7 +76,7 @@ Response (SELECT) is the standard SPARQL JSON results shape:
 ### 3.3 Query catalog / template reports — DataPlatform (→ `B12`, `B13`)
 
 | Op | Method | Path | Notes |
-|----|--------|------|-------|
+| ---- | -------- | ------ | ------- |
 | List reports | `GET` | `/dataplatform/api/querycatalog` | Returns `CatalogQuery[]`: `{ iri, labels, queryText, queryTypes }`. Optional `langPref[]`, `contextGraph`. Powers a `loadOptions` dropdown. |
 | Run report | `GET`/`POST` | `/dataplatform/api/queries/reports/perform?queryIri=<iri>&substitutions=<json>&contextGraph=<g>&fileName=<n>` | `substitutions` is a **JSON-encoded map** of `placeholder → value`; every placeholder in the saved query must be set. Response `text/csv`. Use `POST` when the substitutions map is large (URL length). |
 
@@ -101,7 +104,7 @@ adopt once upstream is fixed.
 **Credential fields:**
 
 | Field | Type | Default / notes |
-|-------|------|-----------------|
+| ------- | ------ | ----------------- |
 | `grantType` — Grant Type | options | `client_credentials` (default) or `password`; controls which fields below are shown. |
 | `baseUrl` — CMEM Base URL | string | e.g. `https://cmem.example.com` (trailing slash stripped in helper). |
 | `clientId` — OAuth Client ID | string | required. |
@@ -135,7 +138,7 @@ but API unreachable (check base URL / base path)".
 SPARQL row-flattening, and CSV parsing are clumsy declaratively and easier to unit-test in code.
 
 | Resource | Operation | Endpoint | Key parameters |
-|----------|-----------|----------|----------------|
+| ---------- | ----------- | ---------- | ---------------- |
 | Workflow | Execute | §3.1 sync | `projectId`, `taskId`, `payloadType` (None/JSON/XML → Content-Type), `payload` (hidden when None), `acceptType` (JSON/XML), `splitOutput` toggle. |
 | Workflow | Execute Async | §3.1 async | as above; emits `{ executionId, location }`. |
 | Workflow | Cancel | §3.1 cancel | `projectId`, `taskId`, `executionId`. |
@@ -162,30 +165,38 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
   future breaking changes bump the node version without breaking saved workflows.
 - **v1** ships the credential + `Workflow → Execute` (+ Async/Cancel) to prove the auth path
   end-to-end. **v2** adds `SPARQL` and `Query Catalog` resources — purely **additive** (new options
-  + new `execute` branches), so only the package semver minor increments, not the node `version`.
+  and `execute` branches), so only the package semver minor increments, not the node `version`.
 - Package semver: `0.1.0` for v1 (pre-verification) → `1.0.0` once verified against a real CMEM.
 
 ## 8. Risks & open questions
 
 | ID | Risk / question | Mitigation |
-|----|-----------------|------------|
+| ---- | ----------------- | ------------ |
 | `R1` | n8n generic OAuth2 *clientCredentials* is buggy ([#16857](https://github.com/n8n-io/n8n/issues/16857)). | Custom token helper (§4); revisit `oAuth2Api` via `B15`. |
 | `R2` | Does `executeOnPayload` require a variable output dataset? Empty-result behavior? | Verify on a real workflow; handle empty `200`/`204` gracefully. |
 | `R3` | DP `/api/userinfo` path may vary per deployment (used in credential test). | DI `/api/workflow/info` fallback. |
 | `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
 | `R5` | Report CSV quoting / newlines / encoding edge cases. | Quote-aware parser + unit fixtures (`B14`). |
-| `R6` | License: Apache-2.0 vs MIT. | Default Apache-2.0; confirm with eccenca. |
+| `R6` | License: the n8n starter/verified nodes use **MIT**; eccenca's `cmemc` is Apache-2.0. | Apache-2.0 for internal/self-hosted use; switch to MIT if Creator-Portal verification (`R7`) is a goal. Confirm with eccenca. |
 | `R7` | n8n verified-community-node requirements (no runtime deps, GitHub-Actions provenance publish). | Track in `B17`. |
 
-## 9. Testing strategy (→ `B8`, `B9`, `B11`, `B14`)
+## 9. Tooling, testing & dev workflow (→ `B1`, `B8`, `B9`, `B11`, `B14`)
 
-- **Lint:** `eslint-plugin-n8n-nodes-base` (community config) + a stricter prepublish config gated
-  in `prepublishOnly`.
-- **Unit (jest + ts-jest, `nock`/stubbed `IExecuteFunctions`):** `getToken` caching/expiry & error
-  mapping; SPARQL JSON→items flattening (simplify on/off, unbound vars) from a recorded fixture;
-  `buildSubstitutions` (pairs → JSON map, escaping, raw-JSON override); CSV parser edge cases.
-- **Manual / local dev:** `npm run build` → `npm link` → link into `~/.n8n/custom`, restart n8n;
-  enter credential, run credential test, then a trivial `SELECT * WHERE {?s ?p ?o} LIMIT 1` against
-  a real/staging CMEM.
-- **CI:** PR → build + lint + test. Tag `v*` → build + lint + test + `npm publish --provenance`
-  (`B9`, `R7`).
+Build/lint/dev/release tooling comes from the official **`@n8n/node-cli`** (the
+`n8n-node` command), scaffolded via `npm create @n8n/node`; requires **Node.js
+v22+**. A `Taskfile.yml` ([go-task](https://taskfile.dev)) wraps these as
+operator-facing targets (`task deps | build | lint | dev | test | release`).
+
+- **Lint:** `n8n-node lint` — bundles `eslint-plugin-n8n-nodes-base`
+  (verification-grade) + prettier; `n8n-node lint --fix` to autofix.
+- **Unit (jest + ts-jest, `nock`/stubbed `IExecuteFunctions`):** `getToken`
+  caching/expiry & error mapping; SPARQL JSON→items flattening (simplify on/off,
+  unbound vars) from a recorded fixture; `buildSubstitutions` (pairs → JSON map,
+  escaping, raw-JSON override); CSV parser edge cases.
+- **Manual / local dev:** `task dev` (`n8n-node dev`) runs n8n with the node
+  hot-reloaded at `http://localhost:5678` — no `npm link` needed. Enter the
+  credential, run the credential test, then a trivial
+  `SELECT * WHERE {?s ?p ?o} LIMIT 1` against a real/staging CMEM.
+- **CI:** PR → build + lint + test. Tag `v*` → `n8n-node release` → publish to
+  npm **with provenance** (mandatory for community nodes from 2026-05-01; `B9`,
+  `R7`).
