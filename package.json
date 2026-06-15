@@ -1,6 +1,6 @@
 {
 	"name": "@eccenca/n8n-nodes-corporate-memory",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "n8n community node for eccenca Corporate Memory (CMEM): execute Data Integration workflows and (v2) run SPARQL queries and query-catalog reports.",
 	"license": "MIT",
 	"publishConfig": {
