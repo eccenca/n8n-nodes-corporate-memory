@@ -52,7 +52,7 @@ function asJsonObject(value: unknown): IDataObject {
 
 export class CorporateMemory implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Corporate Memory',
+		displayName: 'eccenca Corporate Memory',
 		name: 'corporateMemory',
 		icon: 'file:corporateMemory.svg',
 		group: ['transform'],
@@ -61,7 +61,7 @@ export class CorporateMemory implements INodeType {
 		description: 'Interact with eccenca Corporate Memory (CMEM)',
 		usableAsTool: true,
 		defaults: {
-			name: 'Corporate Memory',
+			name: 'eccenca Corporate Memory',
 		},
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],

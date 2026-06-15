@@ -16,7 +16,7 @@ import {
 export class CorporateMemoryApi implements ICredentialType {
 	name = 'corporateMemoryApi';
 
-	displayName = 'Corporate Memory API';
+	displayName = 'eccenca Corporate Memory API';
 
 	documentationUrl = 'https://documentation.eccenca.com/';
 

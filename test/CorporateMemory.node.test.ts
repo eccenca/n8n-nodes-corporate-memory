@@ -62,7 +62,7 @@ describe('CorporateMemory.execute', () => {
 				username: 'admin',
 				password: 'admin',
 			}),
-			getNode: () => ({ name: 'Corporate Memory' }),
+			getNode: () => ({ name: 'eccenca Corporate Memory' }),
 			continueOnFail: () => false,
 			helpers: { httpRequest },
 		} as never;
