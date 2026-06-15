@@ -16,6 +16,7 @@ import {
 export class CorporateMemoryApi implements ICredentialType {
 	name = 'corporateMemoryApi';
 
+	// eslint-disable-next-line n8n-nodes-base/cred-class-field-display-name-miscased -- "eccenca" is an intentionally lowercase brand name
 	displayName = 'eccenca Corporate Memory API';
 
 	documentationUrl = 'https://documentation.eccenca.com/';
