@@ -5,13 +5,9 @@ import {
 	jsonParse,
 } from 'n8n-workflow';
 import type {
-	ICredentialsDecrypted,
-	ICredentialTestFunctions,
 	IDataObject,
 	IExecuteFunctions,
-	IHttpRequestOptions,
 	ILoadOptionsFunctions,
-	INodeCredentialTestResult,
 	INodeExecutionData,
 	INodePropertyOptions,
 	INodeType,
@@ -23,7 +19,6 @@ import {
 	buildSubstitutions,
 	cmemApiRequest,
 	flattenSparqlResult,
-	getCmemToken,
 	listCatalogQueries,
 	listQueryCatalogGraphs,
 	parseCsv,
@@ -74,7 +69,6 @@ export class CorporateMemory implements INodeType {
 			{
 				name: 'corporateMemoryApi',
 				required: true,
-				testedBy: 'corporateMemoryApiTest',
 			},
 		],
 		properties: [
@@ -440,61 +434,6 @@ export class CorporateMemory implements INodeType {
 				const catalogGraph = (this.getCurrentNodeParameter('catalogGraph') as string) || undefined;
 				const queries = await listCatalogQueries(requester, credentials, catalogGraph);
 				return queries.map((query) => ({ name: query.label, value: query.iri }));
-			},
-		},
-		credentialTest: {
-			async corporateMemoryApiTest(
-				this: ICredentialTestFunctions,
-				credential: ICredentialsDecrypted,
-			): Promise<INodeCredentialTestResult> {
-				const credentials = credential.data as unknown as CorporateMemoryCredentials;
-				// The credential-test context exposes the legacy `request` helper and,
-				// on newer n8n, `httpRequest`. Read both off a local alias (the
-				// deprecated-helper lint rule only flags `this.helpers.request`) and
-				// prefer `httpRequest` when present. A node-level test is required
-				// because the OAuth2 token must be fetched before the check request.
-				const helpers = this.helpers as unknown as {
-					httpRequest?: (options: IHttpRequestOptions) => Promise<unknown>;
-					request?: (options: Record<string, unknown>) => Promise<unknown>;
-				};
-				const requester: CmemRequester = {
-					helpers: {
-						httpRequest: async (options: IHttpRequestOptions) => {
-							if (typeof helpers.httpRequest === 'function') {
-								return helpers.httpRequest(options);
-							}
-							return helpers.request!({
-								method: options.method,
-								url: options.url,
-								qs: options.qs,
-								body: options.body,
-								headers: options.headers,
-								json: options.json,
-							});
-						},
-					},
-				};
-
-				try {
-					await getCmemToken(requester, credentials);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					return { status: 'Error', message: `Authentication failed: ${message}` };
-				}
-
-				try {
-					await cmemApiRequest(requester, credentials, 'dp', 'GET', '/userinfo', {
-						parseJson: true,
-					});
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					return {
-						status: 'Error',
-						message: `Token obtained, but the CMEM API could not be reached. Check the base URL / base path. (${message})`,
-					};
-				}
-
-				return { status: 'OK', message: 'Authentication successful' };
 			},
 		},
 	};

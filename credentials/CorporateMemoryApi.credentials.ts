@@ -1,4 +1,17 @@
-import type { ICredentialType, INodeProperties } from 'n8n-workflow';
+import type {
+	IAuthenticateGeneric,
+	ICredentialDataDecryptedObject,
+	ICredentialTestRequest,
+	ICredentialType,
+	IDataObject,
+	IHttpRequestHelper,
+	INodeProperties,
+} from 'n8n-workflow';
+
+import {
+	getCmemToken,
+	type CorporateMemoryCredentials,
+} from '../nodes/CorporateMemory/GenericFunctions';
 
 export class CorporateMemoryApi implements ICredentialType {
 	name = 'corporateMemoryApi';
@@ -9,10 +22,6 @@ export class CorporateMemoryApi implements ICredentialType {
 
 	icon = 'file:corporateMemory.svg' as const;
 
-	// The credential is tested by the Corporate Memory node via `testedBy`
-	// (see CorporateMemory.node.ts → methods.credentialTest). A node-level test
-	// is required because the OAuth2 token must be fetched before the check call,
-	// which a declarative `test` request cannot do in current n8n.
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Grant Type',
@@ -111,5 +120,49 @@ export class CorporateMemoryApi implements ICredentialType {
 			placeholder: 'https://cmem.example.com/dataplatform',
 			description: 'Override the DataPlatform base URL. Defaults to {Base URL}/dataplatform.',
 		},
+		{
+			// Storage slot for the token fetched by preAuthentication. The
+			// `expirable` flag is what makes n8n actually invoke preAuthentication
+			// (on first use, on expiry, and during the credential test).
+			displayName: 'Session Token',
+			name: 'sessionToken',
+			type: 'hidden',
+			typeOptions: {
+				expirable: true,
+				password: true,
+			},
+			default: '',
+		},
 	];
+
+	// Fetch an OAuth2 access token (client-credentials or password grant) before
+	// any authenticated request. The returned `sessionToken` is referenced by
+	// `authenticate` and by the credential `test` below.
+	async preAuthentication(
+		this: IHttpRequestHelper,
+		credentials: ICredentialDataDecryptedObject,
+	): Promise<IDataObject> {
+		const token = await getCmemToken(this, credentials as unknown as CorporateMemoryCredentials);
+		return { sessionToken: token };
+	}
+
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				Authorization: '=Bearer {{$credentials.sessionToken}}',
+			},
+		},
+	};
+
+	// Credential test: GET the DataPlatform /userinfo endpoint. The base URL is
+	// derived from the static credential fields (the test URL is resolved before
+	// preAuthentication runs); the bearer token comes from `authenticate`.
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL:
+				"={{$credentials.dpBaseUrl || (($credentials.baseUrl.endsWith('/') ? $credentials.baseUrl.slice(0, -1) : $credentials.baseUrl) + '/dataplatform')}}",
+			url: '/userinfo',
+		},
+	};
 }

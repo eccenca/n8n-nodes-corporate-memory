@@ -180,7 +180,7 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 | ---- | ----------------- | ------------ |
 | `R1` | n8n generic OAuth2 *clientCredentials* is buggy ([#16857](https://github.com/n8n-io/n8n/issues/16857)). | Custom token helper (§4); revisit `oAuth2Api` via `B15`. |
 | `R2` | **Resolved.** `executeOnPayload` 415s without a body; `/api/workflow/result` returns `204` when a workflow has no variable output (verified on docker.localhost). | Use `/api/workflow/result` (sync) + `/api/workflow/executeAsync` (async); `204` ⇒ `{ executed, hasResult: false }`. |
-| `R3` | **Resolved.** The DP user endpoint is `/dataplatform/userinfo` (verified on docker.localhost, returns the account); `/dataplatform/api/userinfo` 404s. Also: `preAuthentication` output does not reach the declarative test's `baseURL` expression. | Credential test GETs `/userinfo` with `baseURL` derived from `$credentials.baseUrl`. |
+| `R3` | **Resolved.** DP user endpoint is `/dataplatform/userinfo` (`/api/userinfo` 404s). n8n invokes `preAuthentication` **only** when the credential has a `hidden` `expirable` property; and the test `baseURL` resolves before `preAuthentication`. | Added hidden `expirable` `sessionToken`; `authenticate` injects it; test GETs `/userinfo` with `baseURL` from static `$credentials` fields. |
 | `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
 | `R5` | **Addressed.** Report CSV quoting / newlines / escaped quotes. | Quote-aware `parseCsv` + unit tests (`B14`); verified on a 52-row report on docker.localhost. |
 | `R6` | **Resolved.** License is **MIT** (confirmed with eccenca). | MIT — aligns with the n8n ecosystem and keeps Creator-Portal verification (`R7`) open. |

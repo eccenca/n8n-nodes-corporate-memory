@@ -1,56 +1,6 @@
 import { CorporateMemory } from '../nodes/CorporateMemory/CorporateMemory.node';
 import { clearCmemTokenCache } from '../nodes/CorporateMemory/GenericFunctions';
 
-const credential = {
-	data: {
-		grantType: 'password',
-		baseUrl: 'http://docker.localhost/',
-		clientId: 'cmemc',
-		username: 'admin',
-		password: 'admin',
-	},
-} as never;
-
-function context(httpRequest: jest.Mock) {
-	return { helpers: { httpRequest } } as never;
-}
-
-describe('CorporateMemory.credentialTest', () => {
-	beforeEach(() => clearCmemTokenCache());
-
-	it('returns OK when the token and userinfo calls succeed', async () => {
-		const httpRequest = jest
-			.fn()
-			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 }) // token
-			.mockResolvedValueOnce({ accountName: 'admin' }); // /userinfo
-		const node = new CorporateMemory();
-
-		const result = await node.methods.credentialTest.corporateMemoryApiTest.call(
-			context(httpRequest),
-			credential,
-		);
-
-		expect(result.status).toBe('OK');
-		// userinfo is requested against the normalised DataPlatform base URL
-		expect(httpRequest.mock.calls[1][0].url).toBe(
-			'http://docker.localhost/dataplatform/userinfo',
-		);
-	});
-
-	it('returns Error when the token request fails', async () => {
-		const httpRequest = jest.fn().mockRejectedValue(new Error('401 Unauthorized'));
-		const node = new CorporateMemory();
-
-		const result = await node.methods.credentialTest.corporateMemoryApiTest.call(
-			context(httpRequest),
-			credential,
-		);
-
-		expect(result.status).toBe('Error');
-		expect(result.message).toMatch(/Authentication failed/);
-	});
-});
-
 describe('CorporateMemory.loadOptions', () => {
 	beforeEach(() => clearCmemTokenCache());
 

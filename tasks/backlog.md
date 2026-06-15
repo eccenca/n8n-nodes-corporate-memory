@@ -33,8 +33,13 @@
   `cmemApiRequest()` (resolve component base, attach Bearer, `this.helpers.httpRequest`), base-URL
   normalization (strip trailing slash, avoid double slashes).
 - [x] **B4 — Credential test** (→ §4, `R3`)
-  Node `methods.credentialTest`: `getToken` → `GET {dp}/api/userinfo` (fallback
-  `GET {di}/api/workflow/info`); friendly error messages distinguishing token vs reachability.
+  Declarative credential `test` (required by n8n verification — a node-level `testedBy` is not
+  accepted). Key gotcha: n8n only invokes `preAuthentication` when the credential declares a
+  `hidden` property with `typeOptions.expirable: true` — so a hidden `expirable` `sessionToken`
+  field is required. With it: `preAuthentication` fetches the token (`getCmemToken`) → stored in
+  `sessionToken`; `authenticate` injects `Bearer {{$credentials.sessionToken}}`; the test GETs
+  `{dp}/userinfo` (base URL from static `$credentials` fields, since the test URL resolves before
+  `preAuthentication`).
 - [x] **B5 — Node skeleton + versioning + router** (→ §5, §7)
   `Corporate Memory` node, `version: [1]`/`defaultVersion: 1`, resource→operation dropdowns,
   `execute()` dispatch, `Continue On Fail` + `NodeApiError` mapping.
