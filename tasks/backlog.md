@@ -11,7 +11,7 @@
   `package.json` (correct `n8n` field), `tsconfig`, eslint
   (`eslint-plugin-n8n-nodes-base`) + prettier, the `n8n-node`
   build/dev/lint/release scripts, and a provenance `publish.yml`. No gulp — the
-  CLI handles the build/icons. Set name `n8n-nodes-eccenca-corporate-memory`,
+  CLI handles the build/icons. Set name `@eccenca/n8n-nodes-corporate-memory`,
   keyword `n8n-community-node-package`, `LICENSE` (MIT), `README.md`,
   `.gitignore`/`.npmignore`; keep the existing `.markdownlint.json`. Requires
   Node.js v22+.
@@ -96,8 +96,8 @@
   - [ ] Public **GitHub** repo whose URL matches npm `repository`/`homepage` (repo is on GitLab).
   - [ ] **GitHub Actions** `publish.yml` that publishes to npm **with provenance** (required from
     2026-05-01; no publishing from a local machine). `npm create @n8n/node` ships this workflow.
-  - [ ] Publish `n8n-nodes-eccenca-corporate-memory` to npm, then pass
-    `npx @n8n/scan-community-package n8n-nodes-eccenca-corporate-memory`.
+  - [ ] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
+    `npx @n8n/scan-community-package @eccenca/n8n-nodes-corporate-memory`.
   - [ ] Consistent author/maintainer identity across npm + GitHub.
   - [ ] Nice-to-have: `CorporateMemory.node.json` codex (categories + doc links) and an example
     workflow in the README.

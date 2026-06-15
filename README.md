@@ -1,4 +1,4 @@
-# n8n-nodes-eccenca-corporate-memory
+# @eccenca/n8n-nodes-corporate-memory
 
 An [n8n](https://n8n.io) community node for
 [eccenca Corporate Memory (CMEM)](https://eccenca.com).
@@ -15,7 +15,7 @@ and **Query Catalog** (list and run saved, parameterized queries). See
 ## Installation
 
 In a self-hosted n8n: **Settings → Community Nodes → Install** and enter
-`n8n-nodes-eccenca-corporate-memory`. See the n8n docs on
+`@eccenca/n8n-nodes-corporate-memory`. See the n8n docs on
 [installing community nodes](https://docs.n8n.io/integrations/community-nodes/installation/).
 
 ## Credentials

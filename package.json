@@ -1,9 +1,12 @@
 {
-	"name": "n8n-nodes-eccenca-corporate-memory",
+	"name": "@eccenca/n8n-nodes-corporate-memory",
 	"version": "0.1.0",
 	"description": "n8n community node for eccenca Corporate Memory (CMEM): execute Data Integration workflows and (v2) run SPARQL queries and query-catalog reports.",
 	"license": "MIT",
-	"homepage": "https://github.com/eccenca/n8n-nodes-eccenca-corporate-memory#readme",
+	"publishConfig": {
+		"access": "public"
+	},
+	"homepage": "https://github.com/eccenca/n8n-nodes-corporate-memory#readme",
 	"keywords": [
 		"n8n-community-node-package",
 		"n8n",
@@ -20,7 +23,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/eccenca/n8n-nodes-eccenca-corporate-memory.git"
+		"url": "git+https://github.com/eccenca/n8n-nodes-corporate-memory.git"
 	},
 	"engines": {
 		"node": ">=22"

@@ -1,10 +1,10 @@
-# GitLab CI for n8n-nodes-eccenca-corporate-memory.
-# The repository lives on gitlab.eccenca.com, so CI runs here rather than on
-# GitHub Actions. Publishing with npm provenance requires a trusted-publisher
-# setup on a supported CI; adjust the `publish` job to your npm token / OIDC.
+---
+# GitLab CI for @eccenca/n8n-nodes-corporate-memory — internal build/lint/test
+# mirror only. npm publishing happens on GitHub Actions with provenance
+# (.github/workflows/publish.yml): n8n verified community nodes must be
+# published via GitHub Actions, so there is intentionally no publish job here.
 stages:
   - verify
-  - publish
 
 default:
   image: node:22
@@ -25,16 +25,3 @@ verify:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
-
-publish:
-  stage: publish
-  script:
-    - npm ci
-    - npm run lint
-    - npm test
-    - npm run build
-    # Requires NPM_TOKEN as a masked, protected CI/CD variable.
-    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-    - npm publish --provenance --access public
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/'

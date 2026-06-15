@@ -11,7 +11,7 @@ package publishes an [n8n](https://n8n.io) **community node** so automation engi
 CMEM from n8n workflows: execute CMEM data-integration workflows on a payload, run SPARQL SELECT
 queries, and run saved (parameterized) catalog queries / "template reports".
 
-- **Package name:** `n8n-nodes-eccenca-corporate-memory`
+- **Package name:** `@eccenca/n8n-nodes-corporate-memory`
 - **Node displayName:** `Corporate Memory`
 - **License:** MIT (confirmed — see `R6`)
 - **Tooling:** scaffolded with the official [`@n8n/node-cli`](https://www.npmjs.com/package/@n8n/node-cli) (`npm create @n8n/node`) and operated via a `Taskfile.yml` ([go-task](https://taskfile.dev)). Requires Node.js v22+.

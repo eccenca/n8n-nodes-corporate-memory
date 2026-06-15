@@ -1,5 +1,6 @@
-# Taskfile for n8n-nodes-eccenca-corporate-memory
+# Taskfile for @eccenca/n8n-nodes-corporate-memory
 # https://taskfile.dev — wraps the @n8n/node-cli (n8n-node) lifecycle.
+---
 version: '3'
 
 tasks:
@@ -20,7 +21,7 @@ tasks:
       - npm run build
 
   dev:
-    desc: Run a local n8n instance with the node hot-reloaded (http://localhost:5678)
+    desc: Run a local n8n with the node hot-reloaded (http://localhost:5678)
     cmds:
       - npm run dev
 

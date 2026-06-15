@@ -1,0 +1,48 @@
+---
+# Publishes this n8n community node to npm on every version tag push, with an
+# npm provenance attestation. From 2026-05-01 n8n requires verified community
+# nodes to be published this way (GitHub Actions + provenance) — not from a
+# local machine. Requires @n8n/node-cli >= 0.23.0 (this repo uses 0.34.x).
+#
+# One-time npm setup (pick one):
+#   A) Trusted Publishing (recommended, no secrets): on npmjs.com → package
+#      Settings → Publish access → Trusted Publishers → Add → GitHub Actions
+#      with owner "eccenca", repo "n8n-nodes-corporate-memory",
+#      workflow "publish.yml". Leave NPM_TOKEN unset.
+#   B) Token: add an automation token as the NPM_TOKEN repo secret.
+#
+# Release: run `npm run release` locally (bumps version, tags, pushes) — the tag
+# push triggers this workflow to publish.
+name: Publish
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      # Mint an OIDC token for npm provenance.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release (lint + build + publish with provenance)
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npm run release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
