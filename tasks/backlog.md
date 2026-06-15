@@ -93,9 +93,8 @@
   dependencies**; no env-var/filesystem access; per-item error handling; MIT; English; README;
   `n8n-node lint` clean.
   Gaps for verification:
-  - [ ] Public **GitHub** repo whose URL matches npm `repository`/`homepage` (repo is on GitLab).
-  - [ ] **GitHub Actions** `publish.yml` that publishes to npm **with provenance** (required from
-    2026-05-01; no publishing from a local machine). `npm create @n8n/node` ships this workflow.
+  - [x] Public **GitHub** repo `eccenca/n8n-nodes-corporate-memory`; npm `repository`/`homepage` match.
+  - [x] **GitHub Actions** `ci.yml` + `publish.yml` (npm publish **with provenance**, `id-token: write`).
   - [ ] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
     `npx @n8n/scan-community-package @eccenca/n8n-nodes-corporate-memory`.
   - [ ] Consistent author/maintainer identity across npm + GitHub.
