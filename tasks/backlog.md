@@ -100,9 +100,9 @@
   Gaps for verification:
   - [x] Public **GitHub** repo `eccenca/n8n-nodes-corporate-memory`; npm `repository`/`homepage` match.
   - [x] **GitHub Actions** `ci.yml` + `publish.yml` (npm publish **with provenance**, `id-token: write`).
-  - [ ] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
+  - [x] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
     `npx @n8n/scan-community-package @eccenca/n8n-nodes-corporate-memory`.
-  - [ ] Consistent author/maintainer identity across npm + GitHub.
+  - [x] Consistent author/maintainer identity across npm + GitHub.
   - [ ] Nice-to-have: `CorporateMemory.node.json` codex (categories + doc links) and an example
     workflow in the README.
   - [ ] Submit via the [n8n Creator Portal](https://creators.n8n.io) and pass review.
