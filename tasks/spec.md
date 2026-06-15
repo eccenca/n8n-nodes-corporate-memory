@@ -13,7 +13,7 @@ queries, and run saved (parameterized) catalog queries / "template reports".
 
 - **Package name:** `n8n-nodes-eccenca-corporate-memory`
 - **Node displayName:** `Corporate Memory`
-- **License:** Apache-2.0 (matches eccenca's [`cmemc`](https://github.com/eccenca/cmemc)); MIT if pursuing n8n verification — see `R6`
+- **License:** MIT (confirmed — see `R6`)
 - **Tooling:** scaffolded with the official [`@n8n/node-cli`](https://www.npmjs.com/package/@n8n/node-cli) (`npm create @n8n/node`) and operated via a `Taskfile.yml` ([go-task](https://taskfile.dev)). Requires Node.js v22+.
 - **Motivation (Jira user story):** *As an automation engineer, in order to ingest data from my
   n8n workflows, I want a CMEM node implementation.* n8n has 1000+ community nodes; integrating
@@ -183,7 +183,7 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
 | `R3` | **Resolved.** The DP user endpoint is `/dataplatform/userinfo` (verified on docker.localhost, returns the account); `/dataplatform/api/userinfo` 404s. Also: `preAuthentication` output does not reach the declarative test's `baseURL` expression. | Credential test GETs `/userinfo` with `baseURL` derived from `$credentials.baseUrl`. |
 | `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
 | `R5` | **Addressed.** Report CSV quoting / newlines / escaped quotes. | Quote-aware `parseCsv` + unit tests (`B14`); verified on a 52-row report on docker.localhost. |
-| `R6` | License: the n8n starter/verified nodes use **MIT**; eccenca's `cmemc` is Apache-2.0. | Apache-2.0 for internal/self-hosted use; switch to MIT if Creator-Portal verification (`R7`) is a goal. Confirm with eccenca. |
+| `R6` | **Resolved.** License is **MIT** (confirmed with eccenca). | MIT — aligns with the n8n ecosystem and keeps Creator-Portal verification (`R7`) open. |
 | `R7` | n8n verified-community-node requirements (no runtime deps, GitHub-Actions provenance publish). | Track in `B17`. |
 
 ## 9. Tooling, testing & dev workflow (→ `B1`, `B8`, `B9`, `B11`, `B14`)

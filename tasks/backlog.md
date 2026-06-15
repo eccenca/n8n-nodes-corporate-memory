@@ -12,7 +12,7 @@
   (`eslint-plugin-n8n-nodes-base`) + prettier, the `n8n-node`
   build/dev/lint/release scripts, and a provenance `publish.yml`. No gulp — the
   CLI handles the build/icons. Set name `n8n-nodes-eccenca-corporate-memory`,
-  keyword `n8n-community-node-package`, `LICENSE` (`R6`), `README.md`,
+  keyword `n8n-community-node-package`, `LICENSE` (MIT), `README.md`,
   `.gitignore`/`.npmignore`; keep the existing `.markdownlint.json`. Requires
   Node.js v22+.
   Add a **`Taskfile.yml`** ([go-task](https://taskfile.dev)) wrapping the
@@ -87,11 +87,24 @@
   async workflow result-polling + cancellation via the activity API
   (`/workspace/activities/*`, `/api/workflow/executionResult`).
 - [ ] **B17 — Verified community node submission** (→ §1, `R7`)
-  Meet n8n verification guidelines (no runtime deps, docs, provenance publish); eccenca
-  branding/icon; submit.
+  Two tracks. **Unverified** (publish to npm; users self-install by package name) — essentially
+  met today. **Verified** (listed/installable on n8n Cloud) needs the checklist below.
+  Already satisfied: one third-party service; TypeScript + `n8n-node` tooling; **no runtime
+  dependencies**; no env-var/filesystem access; per-item error handling; MIT; English; README;
+  `n8n-node lint` clean.
+  Gaps for verification:
+  - [ ] Public **GitHub** repo whose URL matches npm `repository`/`homepage` (repo is on GitLab).
+  - [ ] **GitHub Actions** `publish.yml` that publishes to npm **with provenance** (required from
+    2026-05-01; no publishing from a local machine). `npm create @n8n/node` ships this workflow.
+  - [ ] Publish `n8n-nodes-eccenca-corporate-memory` to npm, then pass
+    `npx @n8n/scan-community-package n8n-nodes-eccenca-corporate-memory`.
+  - [ ] Consistent author/maintainer identity across npm + GitHub.
+  - [ ] Nice-to-have: `CorporateMemory.node.json` codex (categories + doc links) and an example
+    workflow in the README.
+  - [ ] Submit via the [n8n Creator Portal](https://creators.n8n.io) and pass review.
 - [ ] **B18 — Resolve open questions** (→ §8)
-  `R2` DI output-dataset requirement; `R3` DP `userinfo` path variance; `R6` license confirmation;
-  obtain a demo/staging CMEM for repeatable manual + CI verification.
+  Remaining: obtain a demo/staging CMEM for repeatable **CI** verification. (`R2`/`R3`/`R6`
+  resolved; manual verification done against docker.localhost.)
 
 ## Milestones
 

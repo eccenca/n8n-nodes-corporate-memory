@@ -99,7 +99,4 @@ from 2026-05-01.
 
 ## License
 
-[MIT](LICENSE). Note: the license is provisional — if eccenca pursues n8n's
-verified-community-node program, MIT matches the n8n ecosystem; an internal-only
-node could instead use Apache-2.0 to match `cmemc`. See risk `R6` in
-[tasks/spec.md](tasks/spec.md).
+[MIT](LICENSE).
