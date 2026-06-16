@@ -207,8 +207,9 @@
   - [x] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
     `npx @n8n/scan-community-package @eccenca/n8n-nodes-corporate-memory`.
   - [x] Consistent author/maintainer identity across npm + GitHub.
-  - [ ] Nice-to-have: `CorporateMemory.node.json` codex (categories + doc links) and an example
-    workflow in the README.
+  - [x] `CorporateMemory.node.json` codex (categories Data & Storage / Development / Analytics,
+    README doc links, search aliases). Ships in `dist`; lint + scan still pass.
+  - [ ] Nice-to-have: an example workflow in the README.
   - [ ] Submit via the [n8n Creator Portal](https://creators.n8n.io) and pass review.
 - [ ] **B18 — Resolve open questions** (→ §8)
   Remaining: obtain a demo/staging CMEM for repeatable **CI** verification. (`R2`/`R3`/`R6`

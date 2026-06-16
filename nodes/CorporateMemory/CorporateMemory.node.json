@@ -1,0 +1,15 @@
+{
+	"node": "@eccenca/n8n-nodes-corporate-memory",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Data & Storage", "Development", "Analytics"],
+	"resources": {
+		"credentialDocumentation": [
+			{ "url": "https://github.com/eccenca/n8n-nodes-corporate-memory?tab=readme-ov-file#credentials" }
+		],
+		"primaryDocumentation": [
+			{ "url": "https://github.com/eccenca/n8n-nodes-corporate-memory?tab=readme-ov-file" }
+		]
+	},
+	"alias": ["CMEM", "SPARQL", "Knowledge Graph", "RDF", "eccenca"]
+}
