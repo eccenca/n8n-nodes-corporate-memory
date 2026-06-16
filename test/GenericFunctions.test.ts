@@ -1,50 +1,42 @@
 import {
 	buildSubstitutions,
 	cmemApiRequest,
-	clearCmemTokenCache,
 	flattenSparqlResult,
-	getCmemToken,
 	listCatalogQueries,
 	listQueryCatalogGraphs,
 	normalizeBaseUrl,
 	parseCsv,
 	resolveComponentBaseUrl,
-	resolveTokenUrl,
-	type CmemRequester,
+	type CmemFunctions,
 	type CorporateMemoryCredentials,
 	type SparqlSelectResult,
 } from '../nodes/CorporateMemory/GenericFunctions';
 
-function makeRequester(httpRequest: jest.Mock): CmemRequester {
-	return { helpers: { httpRequest } } as unknown as CmemRequester;
-}
-
 const clientCreds: CorporateMemoryCredentials = {
-	grantType: 'client_credentials',
 	baseUrl: 'https://cmem.example.com',
 	clientId: 'cid',
 	clientSecret: 'secret',
 };
+
+/**
+ * Minimal node-context stub. The helpers are `this`-based and invoked with
+ * `.call(this, …)`, so the stub provides `getCredentials` + the n8n request
+ * helper, mirroring how the real `IExecuteFunctions` / `ILoadOptionsFunctions`
+ * are used.
+ */
+function makeContext(http: jest.Mock, creds: CorporateMemoryCredentials = clientCreds): CmemFunctions {
+	return {
+		getCredentials: async () => creds,
+		getNode: () => ({ name: 'eccenca Corporate Memory', type: 'corporateMemory', typeVersion: 1 }),
+		helpers: { httpRequestWithAuthentication: http },
+	} as unknown as CmemFunctions;
+}
 
 describe('normalizeBaseUrl', () => {
 	it('strips trailing slashes and whitespace', () => {
 		expect(normalizeBaseUrl('https://x/')).toBe('https://x');
 		expect(normalizeBaseUrl('  https://x///  ')).toBe('https://x');
 		expect(normalizeBaseUrl('https://x')).toBe('https://x');
-	});
-});
-
-describe('resolveTokenUrl', () => {
-	it('defaults to the Keycloak cmem realm endpoint', () => {
-		expect(resolveTokenUrl(clientCreds)).toBe(
-			'https://cmem.example.com/auth/realms/cmem/protocol/openid-connect/token',
-		);
-	});
-
-	it('honours an explicit override', () => {
-		expect(resolveTokenUrl({ ...clientCreds, tokenUrl: 'https://kc/realms/x/token' })).toBe(
-			'https://kc/realms/x/token',
-		);
 	});
 });
 
@@ -68,117 +60,128 @@ describe('resolveComponentBaseUrl', () => {
 	});
 });
 
-describe('getCmemToken', () => {
-	beforeEach(() => clearCmemTokenCache());
-
-	it('fetches a token and caches it within its TTL', async () => {
-		const httpRequest = jest.fn().mockResolvedValue({ access_token: 'T1', expires_in: 300 });
-		const requester = makeRequester(httpRequest);
-
-		const first = await getCmemToken(requester, clientCreds, 0);
-		const second = await getCmemToken(requester, clientCreds, 100_000);
-
-		expect(first).toBe('T1');
-		expect(second).toBe('T1');
-		expect(httpRequest).toHaveBeenCalledTimes(1);
-	});
-
-	it('refreshes the token after it expires (accounting for skew)', async () => {
-		const httpRequest = jest
-			.fn()
-			.mockResolvedValueOnce({ access_token: 'T1', expires_in: 300 })
-			.mockResolvedValueOnce({ access_token: 'T2', expires_in: 300 });
-		const requester = makeRequester(httpRequest);
-
-		const first = await getCmemToken(requester, clientCreds, 0);
-		const second = await getCmemToken(requester, clientCreds, 300_000);
-
-		expect(first).toBe('T1');
-		expect(second).toBe('T2');
-		expect(httpRequest).toHaveBeenCalledTimes(2);
-	});
-
-	it('sends the client-credentials grant as a urlencoded body', async () => {
-		const httpRequest = jest.fn().mockResolvedValue({ access_token: 'T', expires_in: 60 });
-		await getCmemToken(makeRequester(httpRequest), clientCreds, 0);
-
-		const options = httpRequest.mock.calls[0][0];
-		expect(options.method).toBe('POST');
-		expect(options.url).toBe(
-			'https://cmem.example.com/auth/realms/cmem/protocol/openid-connect/token',
-		);
-		expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
-		expect(options.body).toContain('grant_type=client_credentials');
-		expect(options.body).toContain('client_id=cid');
-		expect(options.body).toContain('client_secret=secret');
-	});
-
-	it('sends the password grant fields', async () => {
-		const httpRequest = jest.fn().mockResolvedValue({ access_token: 'T', expires_in: 60 });
-		const passwordCreds: CorporateMemoryCredentials = {
-			grantType: 'password',
-			baseUrl: 'https://cmem.example.com',
-			clientId: 'cid',
-			username: 'alice',
-			password: 's3cret',
-		};
-
-		await getCmemToken(makeRequester(httpRequest), passwordCreds, 0);
-
-		const body = httpRequest.mock.calls[0][0].body as string;
-		expect(body).toContain('grant_type=password');
-		expect(body).toContain('username=alice');
-		expect(body).toContain('password=s3cret');
-	});
-
-	it('throws a clear error when the response has no access_token', async () => {
-		const httpRequest = jest.fn().mockResolvedValue({ error: 'invalid_client' });
-		await expect(getCmemToken(makeRequester(httpRequest), clientCreds, 0)).rejects.toThrow(
-			/did not contain an access_token/,
-		);
-	});
-
-	it('maps an HTTP failure to a friendly authentication error', async () => {
-		const httpRequest = jest.fn().mockRejectedValue(new Error('401 Unauthorized'));
-		await expect(getCmemToken(makeRequester(httpRequest), clientCreds, 0)).rejects.toThrow(
-			/CMEM authentication failed/,
-		);
-	});
-
-	it('caches tokens separately per distinct credential', async () => {
-		const httpRequest = jest.fn().mockResolvedValue({ access_token: 'T', expires_in: 300 });
-		await getCmemToken(makeRequester(httpRequest), clientCreds, 0);
-		await getCmemToken(makeRequester(httpRequest), { ...clientCreds, clientId: 'other' }, 0);
-		expect(httpRequest).toHaveBeenCalledTimes(2);
-	});
-});
-
 describe('cmemApiRequest', () => {
-	beforeEach(() => clearCmemTokenCache());
+	it('reads the credential, resolves the base URL and delegates auth to n8n', async () => {
+		const http = jest.fn().mockResolvedValue({ ok: true });
 
-	it('attaches the bearer token and resolves the DI base URL', async () => {
-		const httpRequest = jest
-			.fn()
-			.mockResolvedValueOnce({ access_token: 'TOK', expires_in: 300 })
-			.mockResolvedValueOnce({ ok: true });
-		const requester = makeRequester(httpRequest);
-
-		const result = await cmemApiRequest(
-			requester,
-			{ ...clientCreds, baseUrl: 'https://cmem.example.com/' },
+		const result = await cmemApiRequest.call(
+			makeContext(http, { ...clientCreds, baseUrl: 'https://cmem.example.com/' }),
 			'di',
 			'POST',
-			'/workflow/workflows/p/t/executeOnPayload',
+			'/api/workflow/result/p/t',
 			{ parseJson: true },
 		);
 
 		expect(result).toEqual({ ok: true });
-		const apiCall = httpRequest.mock.calls[1][0];
-		expect(apiCall.url).toBe(
-			'https://cmem.example.com/dataintegration/workflow/workflows/p/t/executeOnPayload',
-		);
-		expect(apiCall.headers.Authorization).toBe('Bearer TOK');
+		expect(http).toHaveBeenCalledTimes(1);
+		const [credentialName, apiCall] = http.mock.calls[0];
+		expect(credentialName).toBe('corporateMemoryOAuth2Api');
+		expect(apiCall.url).toBe('https://cmem.example.com/dataintegration/api/workflow/result/p/t');
 		expect(apiCall.method).toBe('POST');
+		expect(apiCall.json).toBe(true);
+	});
+
+	it('passes through headers, query string and body when provided', async () => {
+		const http = jest.fn().mockResolvedValue('csv');
+		await cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/proxy/default/sparql', {
+			headers: { Accept: 'text/csv' },
+			qs: { graph: 'g' },
+		});
+
+		const apiCall = http.mock.calls[0][1];
+		expect(apiCall.url).toBe('https://cmem.example.com/dataplatform/proxy/default/sparql');
+		expect(apiCall.headers).toEqual({ Accept: 'text/csv' });
+		expect(apiCall.qs).toEqual({ graph: 'g' });
+	});
+
+	it('surfaces the CMEM error detail from a string (unparsed JSON) body', async () => {
+		const http = jest.fn().mockRejectedValue({
+			httpCode: '400',
+			response: {
+				data: JSON.stringify({
+					title: 'Bad Request',
+					detail: 'The query requires the following parameters: graph, limit',
+				}),
+			},
+		});
+
+		await expect(
+			cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/api/queries/reports/perform', {
+				parseJson: false,
+			}),
+		).rejects.toThrow(/requires the following parameters: graph, limit/);
+	});
+
+	it('surfaces the detail from an already-parsed object body and a nested cause', async () => {
+		const http = jest.fn().mockRejectedValue({
+			cause: { response: { status: 400, data: { detail: 'Missing parameter: from' } } },
+		});
+
+		await expect(
+			cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/api/queries/reports/perform'),
+		).rejects.toThrow(/Missing parameter: from/);
+	});
+
+	it('surfaces the detail from the OAuth2 legacy error shape (cause.error body)', async () => {
+		// Mirrors n8n's OAuth2 path: NodeApiError.cause = axios error with the body
+		// on `.error`, `.response` stripped of data, and message "<status> - <json>".
+		const http = jest.fn().mockRejectedValue({
+			message: 'Bad request - please check your parameters',
+			cause: {
+				statusCode: 400,
+				status: 400,
+				error: { title: 'Bad Request', detail: 'Provide values for: graph, limit' },
+				response: { status: 400, statusText: 'Bad Request' },
+				message: '400 - {"title":"Bad Request","detail":"Provide values for: graph, limit"}',
+			},
+		});
+
+		await expect(
+			cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/api/queries/reports/perform', {
+				parseJson: false,
+			}),
+		).rejects.toThrow(/Provide values for: graph, limit/);
+	});
+
+	it('surfaces the detail from a NodeApiError-style context.data body (problem+json)', async () => {
+		// CMEM returns application/problem+json; n8n parses it and stows the object
+		// on the wrapping NodeApiError's `context.data`.
+		const http = jest.fn().mockRejectedValue({
+			message: 'Request failed with status code 400',
+			description: 'Request failed with status code 400',
+			context: {
+				data: {
+					detail: 'The following query substitutions we not set: search',
+					instance: '/dataplatform/api/queries/reports/perform',
+					status: 400,
+					title: 'Bad Request',
+				},
+			},
+		});
+
+		await expect(
+			cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/api/queries/reports/perform', {
+				parseJson: false,
+			}),
+		).rejects.toThrow(/The following query substitutions we not set: search/);
+	});
+
+	it('falls back to parsing the JSON tail of a "<status> - <json>" message', async () => {
+		const http = jest.fn().mockRejectedValue({
+			message: 'Bad request - please check your parameters',
+			cause: { message: '400 - {"detail":"required parameter: country"}' },
+		});
+
+		await expect(cmemApiRequest.call(makeContext(http), 'dp', 'GET', '/x')).rejects.toThrow(
+			/required parameter: country/,
+		);
+	});
+
+	it('rethrows the original error when no readable body is present', async () => {
+		const original = new Error('socket hang up');
+		const http = jest.fn().mockRejectedValue(original);
+
+		await expect(cmemApiRequest.call(makeContext(http), 'di', 'GET', '/x')).rejects.toBe(original);
 	});
 });
 
@@ -253,38 +256,32 @@ describe('parseCsv', () => {
 });
 
 describe('query catalog graphs', () => {
-	beforeEach(() => clearCmemTokenCache());
-
 	it('listQueryCatalogGraphs finds graphs that contain SPARQL query resources', async () => {
-		const httpRequest = jest
-			.fn()
-			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
-			.mockResolvedValueOnce({
-				head: { vars: ['graph', 'label', 'nrQueries'] },
-				results: {
-					bindings: [
-						{
-							graph: { type: 'uri', value: 'g1' },
-							label: { type: 'literal', value: 'Catalog One' },
-							nrQueries: { type: 'literal', value: '5' },
-						},
-						{ graph: { type: 'uri', value: 'g2' }, nrQueries: { type: 'literal', value: '19' } },
-					],
-				},
-			});
+		const http = jest.fn().mockResolvedValueOnce({
+			head: { vars: ['graph', 'label', 'nrQueries'] },
+			results: {
+				bindings: [
+					{
+						graph: { type: 'uri', value: 'g1' },
+						label: { type: 'literal', value: 'Catalog One' },
+						nrQueries: { type: 'literal', value: '5' },
+					},
+					{ graph: { type: 'uri', value: 'g2' }, nrQueries: { type: 'literal', value: '19' } },
+				],
+			},
+		});
 
-		const graphs = await listQueryCatalogGraphs(makeRequester(httpRequest), clientCreds);
+		const graphs = await listQueryCatalogGraphs.call(makeContext(http));
 		expect(graphs).toEqual([
 			{ iri: 'g1', label: 'Catalog One', count: 5 },
 			{ iri: 'g2', label: '', count: 19 },
 		]);
-		expect(httpRequest.mock.calls[1][0].url).toContain('/proxy/default/sparql?query=');
+		expect(http.mock.calls[0][1].url).toContain('/proxy/default/sparql?query=');
 	});
 
 	it('listCatalogQueries merges across all catalog graphs and tags the source', async () => {
-		const httpRequest = jest
+		const http = jest
 			.fn()
-			.mockResolvedValueOnce({ access_token: 'T', expires_in: 300 })
 			.mockResolvedValueOnce({
 				results: {
 					bindings: [
@@ -296,7 +293,7 @@ describe('query catalog graphs', () => {
 			.mockResolvedValueOnce({ payload: [{ iri: 'q1', labels: [{ value: 'Q1' }] }] })
 			.mockResolvedValueOnce({ payload: [{ iri: 'q2', labels: [{ value: 'Q2' }] }] });
 
-		const queries = await listCatalogQueries(makeRequester(httpRequest), clientCreds);
+		const queries = await listCatalogQueries.call(makeContext(http));
 		expect(
 			queries.map((query) => ({ iri: query.iri, label: query.label, catalogGraph: query.catalogGraph })),
 		).toEqual([

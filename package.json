@@ -46,7 +46,7 @@
 		"n8nNodesApiVersion": 1,
 		"strict": true,
 		"credentials": [
-			"dist/credentials/CorporateMemoryApi.credentials.js"
+			"dist/credentials/CorporateMemoryOAuth2Api.credentials.js"
 		],
 		"nodes": [
 			"dist/nodes/CorporateMemory/CorporateMemory.node.js"

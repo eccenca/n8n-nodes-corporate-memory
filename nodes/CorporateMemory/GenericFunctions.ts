@@ -1,68 +1,43 @@
-import type { IDataObject, IHttpRequestMethods, IHttpRequestOptions } from 'n8n-workflow';
-import { ApplicationError } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IExecuteFunctions,
+	IHttpRequestMethods,
+	IHttpRequestOptions,
+	ILoadOptionsFunctions,
+	JsonObject,
+} from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
+
+/** The credential type name; n8n applies its OAuth2 token from this credential. */
+export const CREDENTIAL_NAME = 'corporateMemoryOAuth2Api';
 
 /**
- * Decrypted shape of the Corporate Memory credential.
+ * Node contexts these helpers run in. The helpers are written `this`-based (the
+ * idiomatic n8n pattern) and invoked with `.call(this, …)`, so n8n's request
+ * helper and credential resolution see the real node context.
+ */
+export type CmemFunctions = IExecuteFunctions | ILoadOptionsFunctions;
+
+/**
+ * Decrypted shape of the Corporate Memory credential, as read by the helpers.
+ *
+ * Only the fields needed to resolve component base URLs are listed —
+ * authentication (the OAuth2 token exchange/refresh) is owned by n8n via the
+ * `oAuth2Api`-extending credential, not by this code.
  */
 export interface CorporateMemoryCredentials {
-	grantType: 'client_credentials' | 'password';
 	baseUrl: string;
-	clientId: string;
+	clientId?: string;
 	clientSecret?: string;
-	username?: string;
-	password?: string;
-	tokenUrl?: string;
 	diBaseUrl?: string;
 	dpBaseUrl?: string;
 }
 
 export type CmemComponent = 'di' | 'dp';
 
-/**
- * Minimal structural type satisfied by both `IExecuteFunctions` and the
- * credential-test context: anything that can perform an authenticated-agnostic
- * HTTP request. Keeping it narrow makes the auth helpers unit-testable with a
- * plain mock.
- */
-export interface CmemRequester {
-	helpers: {
-		httpRequest(requestOptions: IHttpRequestOptions): Promise<unknown>;
-	};
-}
-
-interface TokenCacheEntry {
-	token: string;
-	expiresAt: number;
-}
-
-interface TokenResponse {
-	access_token?: string;
-	expires_in?: number;
-}
-
-/** Refresh a token this many milliseconds before it actually expires. */
-const TOKEN_EXPIRY_SKEW_MS = 30_000;
-
-/** Module-level token cache, keyed by grant + client + user + token URL. */
-const tokenCache = new Map<string, TokenCacheEntry>();
-
-/** Clear the in-memory token cache. Exposed for tests. */
-export function clearCmemTokenCache(): void {
-	tokenCache.clear();
-}
-
 /** Strip trailing slashes (and surrounding whitespace) from a base URL. */
 export function normalizeBaseUrl(url: string): string {
 	return (url ?? '').trim().replace(/\/+$/, '');
-}
-
-/** Resolve the Keycloak token endpoint, honouring an explicit override. */
-export function resolveTokenUrl(credentials: CorporateMemoryCredentials): string {
-	const override = (credentials.tokenUrl ?? '').trim();
-	if (override) {
-		return override;
-	}
-	return `${normalizeBaseUrl(credentials.baseUrl)}/auth/realms/cmem/protocol/openid-connect/token`;
 }
 
 /** Resolve the base URL of a CMEM component, honouring an explicit override. */
@@ -79,83 +54,6 @@ export function resolveComponentBaseUrl(
 	return normalizeBaseUrl(override || `${base}/dataplatform`);
 }
 
-function tokenCacheKey(credentials: CorporateMemoryCredentials, tokenUrl: string): string {
-	return [credentials.grantType, credentials.clientId, credentials.username ?? '', tokenUrl].join('|');
-}
-
-function buildTokenRequestBody(credentials: CorporateMemoryCredentials): string {
-	const form = new URLSearchParams();
-	form.append('grant_type', credentials.grantType);
-	if (credentials.clientId) {
-		form.append('client_id', credentials.clientId);
-	}
-	if (credentials.clientSecret) {
-		form.append('client_secret', credentials.clientSecret);
-	}
-	if (credentials.grantType === 'password') {
-		form.append('username', credentials.username ?? '');
-		form.append('password', credentials.password ?? '');
-	}
-	return form.toString();
-}
-
-/**
- * Obtain an OAuth2 access token via the client-credentials or password grant,
- * caching it in memory until shortly before it expires.
- *
- * `nowMs` is injectable so cache/expiry behaviour can be tested deterministically.
- */
-export async function getCmemToken(
-	requester: CmemRequester,
-	credentials: CorporateMemoryCredentials,
-	nowMs: number = Date.now(),
-): Promise<string> {
-	const tokenUrl = resolveTokenUrl(credentials);
-	const cacheKey = tokenCacheKey(credentials, tokenUrl);
-
-	const cached = tokenCache.get(cacheKey);
-	if (cached && nowMs < cached.expiresAt) {
-		return cached.token;
-	}
-
-	let raw: unknown = undefined;
-	let requestError: unknown;
-	try {
-		raw = await requester.helpers.httpRequest({
-			method: 'POST',
-			url: tokenUrl,
-			body: buildTokenRequestBody(credentials),
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-				Accept: 'application/json',
-			},
-		});
-	} catch (error) {
-		requestError = error;
-	}
-	// Thrown outside the catch clause so the helper can surface a node-agnostic
-	// ApplicationError (callers wrap it into a NodeApiError with node context).
-	if (requestError !== undefined) {
-		const message = requestError instanceof Error ? requestError.message : String(requestError);
-		throw new ApplicationError(
-			`CMEM authentication failed: could not obtain a token from ${tokenUrl}. Check the client credentials and token URL. (${message})`,
-		);
-	}
-
-	const response = (typeof raw === 'string' ? JSON.parse(raw) : raw) as TokenResponse;
-	const accessToken = response?.access_token;
-	if (!accessToken) {
-		throw new ApplicationError(
-			`CMEM authentication failed: the token response from ${tokenUrl} did not contain an access_token.`,
-		);
-	}
-
-	const expiresInSeconds = Number(response.expires_in ?? 300);
-	const ttlMs = Math.max(0, expiresInSeconds * 1000 - TOKEN_EXPIRY_SKEW_MS);
-	tokenCache.set(cacheKey, { token: accessToken, expiresAt: nowMs + ttlMs });
-	return accessToken;
-}
-
 export interface CmemRequestOptions {
 	qs?: IDataObject;
 	body?: unknown;
@@ -165,28 +63,164 @@ export interface CmemRequestOptions {
 }
 
 /**
- * Perform an authenticated request against a CMEM component. Resolves the
- * component base URL, obtains/refreshes the bearer token and attaches it.
+ * Parse a (possibly string) error body into an object. CMEM returns a JSON error
+ * body even for requests that asked for CSV, so on failure the body can arrive as
+ * an unparsed string that n8n's own error extractor cannot read.
+ */
+function parseErrorBody(raw: unknown): JsonObject | undefined {
+	if (Array.isArray(raw)) {
+		return { errors: raw } as unknown as JsonObject;
+	}
+	if (raw && typeof raw === 'object') {
+		return raw as JsonObject;
+	}
+	if (typeof raw === 'string') {
+		const text = raw.trim();
+		if (text.startsWith('{') || text.startsWith('[')) {
+			try {
+				const parsed = JSON.parse(text);
+				if (Array.isArray(parsed)) return { errors: parsed } as unknown as JsonObject;
+				if (parsed && typeof parsed === 'object') return parsed as JsonObject;
+			} catch {
+				// not JSON — fall through
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Locate the response body carried by an error thrown from the request helper.
+ *
+ * n8n wraps the failure in a `NodeApiError` whose `.cause` is the underlying
+ * (axios/legacy) error. For the OAuth2 path that underlying error carries the
+ * response body on `.error` (and `.response` is stripped of `data`), and its
+ * `.message` is formatted as `"<status> - <json body>"`. We therefore look at
+ * `.error`/`.response.data`/`.response.body`/`.body`/`.data` on both the error
+ * and its `.cause`, and finally fall back to parsing the JSON tail of the message.
+ */
+function errorResponseBody(error: unknown): unknown {
+	const candidates: unknown[] = [];
+	const collect = (source: unknown): void => {
+		const s = source as
+			| {
+					response?: { data?: unknown; body?: unknown };
+					error?: unknown;
+					body?: unknown;
+					data?: unknown;
+			  }
+			| undefined;
+		if (!s || typeof s !== 'object') return;
+		candidates.push(s.response?.data, s.response?.body, s.error, s.body, s.data);
+	};
+	collect(error);
+	collect((error as { cause?: unknown })?.cause);
+	// n8n's NodeApiError stores a parsed object response body on `context.data`.
+	collect((error as { context?: unknown })?.context);
+	candidates.push((error as { context?: { data?: unknown } })?.context?.data);
+	// …and a non-Error thrown value on `.errorResponse`.
+	const errorResponse = (error as { errorResponse?: unknown })?.errorResponse;
+	collect(errorResponse);
+	candidates.push(errorResponse);
+
+	for (const message of [
+		(error as { message?: unknown })?.message,
+		(error as { cause?: { message?: unknown } })?.cause?.message,
+	]) {
+		if (typeof message === 'string') {
+			const match = message.match(/^\s*\d{3}\s*-\s*([\s\S]+)$/);
+			if (match) candidates.push(match[1]);
+		}
+	}
+
+	return candidates.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+/**
+ * Extract a human-readable message from a CMEM error body. Handles the
+ * RFC-7807 problem+json shape CMEM uses (`title`/`detail`) plus common
+ * `message` / `error_description` / `errors[]` variants.
+ */
+function cmemErrorMessage(body: JsonObject): string | undefined {
+	const str = (value: unknown): string | undefined =>
+		typeof value === 'string' && value.trim() ? value.trim() : undefined;
+
+	const title = str(body.title);
+	const detail =
+		str(body.detail) ??
+		str(body.message) ??
+		str(body.error_description) ??
+		str(body.errorMessage) ??
+		str(body.error);
+	if (detail) return title && title !== detail ? `${title}: ${detail}` : detail;
+	if (title) return title;
+
+	const errors = body.errors;
+	if (Array.isArray(errors)) {
+		const messages = errors
+			.map((entry) => str((entry as IDataObject)?.message) ?? str((entry as IDataObject)?.detail) ?? str(entry))
+			.filter((message): message is string => Boolean(message));
+		if (messages.length) return messages.join('; ');
+	}
+
+	// Last resort: surface a compact JSON of the body so the real detail is
+	// visible even when CMEM uses an unexpected field name (better than n8n's
+	// generic status message).
+	try {
+		const json = JSON.stringify(body);
+		if (json && json !== '{}') return json.length > 400 ? `${json.slice(0, 400)}…` : json;
+	} catch {
+		// non-serialisable — fall through
+	}
+	return undefined;
+}
+
+/**
+ * Build a `NodeApiError` that surfaces CMEM's own error detail. Returns the
+ * original error untouched when no readable body can be recovered (e.g. network
+ * errors), so n8n's default handling still applies.
+ */
+function toCmemApiError(this: CmemFunctions, error: unknown): unknown {
+	const body = parseErrorBody(errorResponseBody(error));
+	if (!body) return error;
+
+	const httpCode =
+		(error as { httpCode?: string | number })?.httpCode ??
+		(error as { cause?: { response?: { status?: number } } })?.cause?.response?.status ??
+		(error as { response?: { status?: number } })?.response?.status;
+
+	return new NodeApiError(this.getNode(), body, {
+		message: cmemErrorMessage(body),
+		httpCode: httpCode !== undefined ? String(httpCode) : undefined,
+	});
+}
+
+/**
+ * Perform an authenticated request against a CMEM component. Reads the credential
+ * for base-URL resolution and delegates authentication to n8n, which obtains and
+ * refreshes the OAuth2 bearer token from the `corporateMemoryOAuth2Api` credential.
+ *
+ * Call with `this` bound to the node context: `cmemApiRequest.call(this, …)`.
  */
 export async function cmemApiRequest(
-	requester: CmemRequester,
-	credentials: CorporateMemoryCredentials,
+	this: CmemFunctions,
 	component: CmemComponent,
 	method: IHttpRequestMethods,
 	path: string,
 	options: CmemRequestOptions = {},
 ): Promise<unknown> {
-	const token = await getCmemToken(requester, credentials);
+	const credentials = (await this.getCredentials(
+		CREDENTIAL_NAME,
+	)) as unknown as CorporateMemoryCredentials;
 	const url = `${resolveComponentBaseUrl(credentials, component)}${path}`;
 
 	const requestOptions: IHttpRequestOptions = {
 		method,
 		url,
-		headers: {
-			Authorization: `Bearer ${token}`,
-			...(options.headers ?? {}),
-		},
 	};
+	if (options.headers !== undefined) {
+		requestOptions.headers = options.headers;
+	}
 	if (options.qs !== undefined) {
 		requestOptions.qs = options.qs;
 	}
@@ -200,7 +234,17 @@ export async function cmemApiRequest(
 		requestOptions.returnFullResponse = options.returnFullResponse;
 	}
 
-	return requester.helpers.httpRequest(requestOptions);
+	try {
+		return await this.helpers.httpRequestWithAuthentication.call(
+			this,
+			CREDENTIAL_NAME,
+			requestOptions,
+		);
+	} catch (error) {
+		// Surface CMEM's own error detail (e.g. the missing report parameters)
+		// instead of n8n's generic "Bad request" message.
+		throw toCmemApiError.call(this, error);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -332,14 +376,12 @@ const GRAPHS_WITH_QUERIES_SPARQL =
  * by the presence of `shui:SparqlQuery` resources rather than the graph type.
  */
 export async function listQueryCatalogGraphs(
-	requester: CmemRequester,
-	credentials: CorporateMemoryCredentials,
+	this: CmemFunctions,
 ): Promise<Array<{ iri: string; label: string; count: number }>> {
 	const params = new URLSearchParams();
 	params.set('query', GRAPHS_WITH_QUERIES_SPARQL);
-	const result = (await cmemApiRequest(
-		requester,
-		credentials,
+	const result = (await cmemApiRequest.call(
+		this,
 		'dp',
 		'GET',
 		`/proxy/default/sparql?${params.toString()}`,
@@ -369,19 +411,17 @@ export interface CatalogQuerySummary {
  * catalog graph; otherwise restricts to that one.
  */
 export async function listCatalogQueries(
-	requester: CmemRequester,
-	credentials: CorporateMemoryCredentials,
+	this: CmemFunctions,
 	catalogGraph?: string,
 ): Promise<CatalogQuerySummary[]> {
 	const graphs = catalogGraph
 		? [catalogGraph]
-		: (await listQueryCatalogGraphs(requester, credentials)).map((graph) => graph.iri);
+		: (await listQueryCatalogGraphs.call(this)).map((graph) => graph.iri);
 
 	const queries: CatalogQuerySummary[] = [];
 	for (const graph of graphs) {
-		const response = (await cmemApiRequest(
-			requester,
-			credentials,
+		const response = (await cmemApiRequest.call(
+			this,
 			'dp',
 			'GET',
 			`/api/querycatalog?contextGraph=${encodeURIComponent(graph)}`,

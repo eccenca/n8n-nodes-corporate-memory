@@ -22,8 +22,6 @@ import {
 	listCatalogQueries,
 	listQueryCatalogGraphs,
 	parseCsv,
-	type CmemRequester,
-	type CorporateMemoryCredentials,
 	type SparqlSelectResult,
 	type SubstitutionPair,
 } from './GenericFunctions';
@@ -67,7 +65,7 @@ export class CorporateMemory implements INodeType {
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
-				name: 'corporateMemoryApi',
+				name: 'corporateMemoryOAuth2Api',
 				required: true,
 			},
 		],
@@ -382,11 +380,7 @@ export class CorporateMemory implements INodeType {
 	methods = {
 		loadOptions: {
 			async getProjects(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const credentials = (await this.getCredentials(
-					'corporateMemoryApi',
-				)) as unknown as CorporateMemoryCredentials;
-				const requester = this as unknown as CmemRequester;
-				const workflows = (await cmemApiRequest(requester, credentials, 'di', 'GET', '/api/workflow/info', {
+				const workflows = (await cmemApiRequest.call(this, 'di', 'GET', '/api/workflow/info', {
 					parseJson: true,
 				})) as Array<{ projectId: string; projectLabel?: string }>;
 
@@ -399,12 +393,8 @@ export class CorporateMemory implements INodeType {
 				return Array.from(projects, ([value, label]) => ({ name: `${label} (${value})`, value }));
 			},
 			async getWorkflows(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const credentials = (await this.getCredentials(
-					'corporateMemoryApi',
-				)) as unknown as CorporateMemoryCredentials;
-				const requester = this as unknown as CmemRequester;
 				const selectedProject = this.getCurrentNodeParameter('projectId') as string | undefined;
-				const workflows = (await cmemApiRequest(requester, credentials, 'di', 'GET', '/api/workflow/info', {
+				const workflows = (await cmemApiRequest.call(this, 'di', 'GET', '/api/workflow/info', {
 					parseJson: true,
 				})) as Array<{ id: string; label?: string; projectId: string }>;
 
@@ -413,11 +403,7 @@ export class CorporateMemory implements INodeType {
 					.map((workflow) => ({ name: workflow.label || workflow.id, value: workflow.id }));
 			},
 			async getQueryCatalogs(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const credentials = (await this.getCredentials(
-					'corporateMemoryApi',
-				)) as unknown as CorporateMemoryCredentials;
-				const requester = this as unknown as CmemRequester;
-				const catalogs = await listQueryCatalogGraphs(requester, credentials);
+				const catalogs = await listQueryCatalogGraphs.call(this);
 				return [
 					{ name: 'All Catalogs', value: '' },
 					...catalogs.map((catalog) => ({
@@ -427,12 +413,8 @@ export class CorporateMemory implements INodeType {
 				];
 			},
 			async getCatalogQueries(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const credentials = (await this.getCredentials(
-					'corporateMemoryApi',
-				)) as unknown as CorporateMemoryCredentials;
-				const requester = this as unknown as CmemRequester;
 				const catalogGraph = (this.getCurrentNodeParameter('catalogGraph') as string) || undefined;
-				const queries = await listCatalogQueries(requester, credentials, catalogGraph);
+				const queries = await listCatalogQueries.call(this, catalogGraph);
 				return queries.map((query) => ({ name: query.label, value: query.iri }));
 			},
 		},
@@ -441,10 +423,6 @@ export class CorporateMemory implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
-		const credentials = (await this.getCredentials(
-			'corporateMemoryApi',
-		)) as unknown as CorporateMemoryCredentials;
-		const requester = this as unknown as CmemRequester;
 
 		for (let i = 0; i < items.length; i++) {
 			try {
@@ -472,9 +450,8 @@ export class CorporateMemory implements INodeType {
 
 					if (operation === 'execute') {
 						headers.Accept = outputMime;
-						const response = (await cmemApiRequest(
-							requester,
-							credentials,
+						const response = (await cmemApiRequest.call(
+							this,
 							'di',
 							'POST',
 							`/api/workflow/result/${project}/${task}`,
@@ -504,7 +481,7 @@ export class CorporateMemory implements INodeType {
 						}
 					} else {
 						const path = `/api/workflow/executeAsync/${project}/${task}?output:type=${encodeURIComponent(outputMime)}`;
-						const response = (await cmemApiRequest(requester, credentials, 'di', 'POST', path, {
+						const response = (await cmemApiRequest.call(this, 'di', 'POST', path, {
 							body,
 							headers,
 							parseJson: true,
@@ -528,9 +505,8 @@ export class CorporateMemory implements INodeType {
 						if (uri) params.append('named-graph-uri', uri);
 					}
 
-					const result = (await cmemApiRequest(
-						requester,
-						credentials,
+					const result = (await cmemApiRequest.call(
+						this,
 						'dp',
 						'GET',
 						`/proxy/default/sparql?${params.toString()}`,
@@ -544,7 +520,7 @@ export class CorporateMemory implements INodeType {
 					if (operation === 'list') {
 						const catalogGraph =
 							(this.getNodeParameter('catalogGraph', i, '') as string) || undefined;
-						const queries = await listCatalogQueries(requester, credentials, catalogGraph);
+						const queries = await listCatalogQueries.call(this, catalogGraph);
 						for (const query of queries) {
 							returnData.push({ json: { ...query }, pairedItem: { item: i } });
 						}
@@ -576,9 +552,8 @@ export class CorporateMemory implements INodeType {
 							params.set('contextGraph', reportOptions.contextGraph);
 						}
 
-						const csv = (await cmemApiRequest(
-							requester,
-							credentials,
+						const csv = (await cmemApiRequest.call(
+							this,
 							'dp',
 							'GET',
 							`/api/queries/reports/perform?${params.toString()}`,
@@ -604,6 +579,13 @@ export class CorporateMemory implements INodeType {
 					const message = error instanceof Error ? error.message : String(error);
 					returnData.push({ json: { error: message }, pairedItem: { item: i } });
 					continue;
+				}
+				// `cmemApiRequest` already raises a NodeApiError carrying CMEM's error
+				// detail. Tag it with the item index; passing an existing NodeApiError
+				// back through the constructor returns it unchanged (idempotent), so the
+				// enriched message is preserved.
+				if (error instanceof NodeApiError) {
+					error.context = { ...error.context, itemIndex: i };
 				}
 				throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: i });
 			}
