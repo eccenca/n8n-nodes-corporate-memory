@@ -91,51 +91,94 @@ Not declared in the specs. CMEM uses Keycloak; the standard token endpoint is
 deployment (`R4`), so the token URL is overridable (§4). DP declares `bearerAuth` (HTTP bearer
 JWT); DI declares no scheme but production requires the same `Authorization: Bearer <jwt>`.
 
-## 4. Authentication & credential design (→ `B2`, `B3`, `B4`)
+## 4. Authentication & credential design (→ `B2`, `B3`, `B4`, `B19`)
 
-Single credential `CorporateMemoryApi` supporting **both** OAuth2 flows
-CMEM/Keycloak offer: **`client_credentials`** and **`password`**
-(resource-owner). A `grantType` selector switches the relevant fields.
+> **v0.4 change (n8n Cloud verification feedback, `B19`–`B24`).** The credential now
+> **extends n8n's built-in `oAuth2Api`** and pins the **`clientCredentials`** grant. n8n
+> owns the token exchange, caching and refresh — the node performs **no** custom token
+> handling. This replaces the v0.3 custom `getCmemToken` helper (`R1`) and drops the
+> resource-owner **password** grant (`R8`). The text below describes the v0.4 design; the
+> v0.3 custom-helper design is preserved in git history.
 
-**Decision (`R1`):** ship a **custom token helper** rather than
-`extends: ['oAuth2Api']`. n8n's generic OAuth2 grants are unreliable on
-self-hosted n8n ([n8n#16857](https://github.com/n8n-io/n8n/issues/16857))
-and awkward to exercise headlessly in the credential test. The custom
-helper fetches and caches the JWT ourselves and handles both grants. The
-`oAuth2Api` variant is kept as a documented `v.later` option (`B15`) to
-adopt once upstream is fixed.
+Single credential `CorporateMemoryOAuth2Api` (`name: 'corporateMemoryOAuth2Api'`,
+displayName *eccenca Corporate Memory OAuth2 API*), `extends: ['oAuth2Api']`, grant
+`clientCredentials` (CMEM service-account client). n8n injects
+`Authorization: Bearer <token>` automatically for every request issued via
+`httpRequestWithAuthentication('corporateMemoryOAuth2Api', …)`.
 
-**Credential fields:**
+> **Naming (verification rule).** The lint rule `cred-class-oauth2-naming` requires any
+> `oAuth2Api`-extending credential to carry an `OAuth2` marker, so the class/`name`/
+> `displayName` were renamed from `CorporateMemoryApi`/`corporateMemoryApi` (v0.3). This is
+> an additional reason v0.4 is breaking for saved credentials — they must be recreated.
 
-| Field | Type | Default / notes |
-| ------- | ------ | ----------------- |
-| `grantType` — Grant Type | options | `client_credentials` (default) or `password`; controls which fields below are shown. |
-| `baseUrl` — CMEM Base URL | string | e.g. `https://cmem.example.com` (trailing slash stripped in helper). |
-| `clientId` — OAuth Client ID | string | required. |
-| `clientSecret` — OAuth Client Secret | string (password) | required for `client_credentials`; optional for `password` (public Keycloak client). |
-| `username` — Username | string | shown/required for the `password` grant only. |
-| `password` — Password | string (password) | shown/required for the `password` grant only. |
-| `tokenUrl` — OAuth Token URL | string | default `={{$credentials.baseUrl}}/auth/realms/cmem/protocol/openid-connect/token`; overridable (Keycloak may be a separate host/realm). |
-| `diBaseUrl` — DataIntegration Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataintegration`. |
-| `dpBaseUrl` — DataPlatform Base URL | string | optional override; default `={{$credentials.baseUrl}}/dataplatform`. |
+**Why client-credentials only — password grant dropped (`R8`).** n8n's `oAuth2Api`
+supports exactly three grants — `authorizationCode`, `clientCredentials`, `pkce`
+(verified verbatim in upstream `OAuth2Api.credentials.ts`); there is **no** resource-owner
+`password` grant. The username/password examples in the n8n `authenticate` docs are
+*generic* authentication — injecting credential fields directly into each request (HTTP
+Basic / header / query), **not** an OAuth2 token exchange. CMEM/Keycloak accept only a
+Keycloak-issued `Authorization: Bearer <JWT>` (not HTTP Basic), so a password grant would
+still require our own token-endpoint call — exactly what the reviewer asked us to remove.
+The client-credentials service-account flow covers the automation use case, so the
+password grant is dropped in v0.4.
 
-**Token flow (`getCmemToken` in `GenericFunctions.ts`):** `POST {tokenUrl}`
-form-urlencoded. For `client_credentials`: `grant_type=client_credentials` with
-`client_id`/`client_secret` in the body. For `password`: `grant_type=password`
-plus `username`/`password` (and `client_id`, with `client_secret` when the client
-is confidential). The token is cached in a module-level map keyed by
-`grantType|clientId|username|tokenUrl`, refreshed ~30s before `expires_in`. The
-**credential** calls `getCmemToken` from `preAuthentication` and injects the token
-via `authenticate` as `Authorization: Bearer {{$credentials.sessionToken}}`. The
-**node** calls `cmemApiRequest()`, which resolves the component base, attaches the
-bearer token and uses `this.helpers.httpRequest`.
+**Credential definition (`extends: ['oAuth2Api']`):**
 
-**Credential test (`B4`):** the credential ships a declarative `test` that GETs
-`{dpBaseUrl}/userinfo` (DataPlatform); `preAuthentication` fetches the token and
-`authenticate` injects the bearer, so both a failing token and an unreachable API
-surface in the n8n credential dialog. The test `baseURL` is derived from
-`$credentials.baseUrl` directly (not from `preAuthentication` output, which does
-not propagate into the test request's URL expression — see `R3`).
+| Field | Source | Default / notes |
+| ----- | ------ | --------------- |
+| `grantType` | override → `hidden` | `clientCredentials`. |
+| `accessTokenUrl` | override → `hidden` | The endpoint n8n actually uses. Derived via a ternary expression: the `tokenUrl` override when set, else `{baseUrl}/auth/realms/cmem/protocol/openid-connect/token` (trailing slash on `baseUrl` stripped with `.replace(/\/+$/, "")`). Hidden so it does **not** render at the top of the inherited block (see Field order). |
+| `scope` | override → `hidden` | `''` (Keycloak issues a service-account token without scope). |
+| `authentication` | override → `hidden` | `body` (send `client_id`/`client_secret` in the urlencoded token body — matches v0.3 behaviour). |
+| `authQueryParameters` | override → `hidden` | `''`. `authUrl` is left to oAuth2Api, which hides it for the client-credentials grant. |
+| `clientId` | override (in place) → visible | required. Kept overridden for the CMEM-specific description; stays in its inherited position. |
+| `clientSecret` | override (in place) → visible | required (confidential service-account client). |
+| `baseUrl` — **Base URL** | custom | required; e.g. `https://cmem.example.com`. Drives the derived URLs. |
+| `tokenUrl` — **OAuth Token URL** | custom | **optional** override of the Keycloak token endpoint; empty default. Feeds `accessTokenUrl`. Editable for a non-default realm/host (`R4`). |
+| `diBaseUrl` — DataIntegration Base URL | custom | optional override; node derives `{baseUrl}/dataintegration` when blank. |
+| `dpBaseUrl` — DataPlatform Base URL | custom | optional override; node derives `{baseUrl}/dataplatform` when blank. |
+
+**Field order (n8n constraint).** With `extends`, n8n adds the inherited `oAuth2Api`
+properties first (in their fixed order; overrides stay in place) and **appends our custom
+properties after them** (`mergeNodeProperties` `push`es new names — verified in upstream).
+So a custom field **cannot precede the inherited fields** — "Base URL" cannot be the very
+first field. To get the token URL to the **bottom**, the inherited `accessTokenUrl` is
+`hidden` and re-exposed as the custom `tokenUrl` field. Rendered order:
+Client ID · Client Secret · Send Additional Body Properties · Allowed HTTP Request Domains ·
+**Base URL** · **OAuth Token URL** · DataIntegration Base URL · DataPlatform Base URL.
+
+Removed vs v0.3: the `grantType` *options selector*, `username`, `password`, the hidden
+`sessionToken`, and `preAuthentication` / `authenticate`. The v0.3 `tokenUrl` field is kept
+but is now an *optional* override (empty default) feeding the hidden `accessTokenUrl`.
+
+**Request path (`cmemApiRequest` in `GenericFunctions.ts`).** `getCmemToken`, the
+module-level token cache (`tokenCache`, `clearCmemTokenCache`), `resolveTokenUrl` and
+`buildTokenRequestBody` are **removed**. The request helpers follow the **idiomatic n8n
+pattern** (cf. `Elasticsearch/GenericFunctions.ts`): they are written **`this`-based** —
+`async function cmemApiRequest(this: IExecuteFunctions | ILoadOptionsFunctions, …)` (type alias
+`CmemFunctions`) — read the credential internally via `this.getCredentials('corporateMemoryOAuth2Api')`
+for base-URL resolution (`resolveComponentBaseUrl`, `normalizeBaseUrl` stay), and issue the
+call via `this.helpers.httpRequestWithAuthentication.call(this, 'corporateMemoryOAuth2Api',
+options)`, so n8n applies (and refreshes) the OAuth2 token. `listQueryCatalogGraphs` /
+`listCatalogQueries` are likewise `this`-based and chain via `cmemApiRequest.call(this, …)`.
+Callers (the node's `execute` and the four `loadOptions`) invoke them with `.call(this, …)` and
+no longer pre-fetch credentials or thread a custom requester — the node is purely
+parameters + routing.
+
+> **Why `.call(this, …)` (gotcha).** n8n's `httpRequestWithAuthentication` reads `this` (it calls
+> `this.getNode()` and resolves the credential off the node context). Invoking it as a bare
+> `helpers.method(…)` leaves `this` as the `helpers` object and fails loadOptions with *"this.getNode
+> is not a function"* (the credential test uses a different code path and is unaffected). The
+> earlier custom `CmemRequester` structural type is dropped in favour of the standard
+> `IExecuteFunctions | ILoadOptionsFunctions` context.
+
+`CorporateMemoryCredentials` narrows to `{ baseUrl; clientId?; clientSecret?; diBaseUrl?;
+dpBaseUrl? }` (read only for base-URL resolution; the token is n8n's concern).
+
+**Credential test (`B4`):** unchanged in intent — a declarative `test` that GETs
+`{dpBaseUrl}/userinfo`. With `oAuth2Api` + `clientCredentials`, n8n obtains the token for
+the test automatically (no redirect), so the hidden `expirable` `sessionToken` and
+`preAuthentication` workaround (`R3`) are no longer needed.
 
 ## 5. Node model (→ `B5`, `B6`, `B10`, `B12`, `B13`)
 
@@ -152,6 +195,24 @@ SPARQL row-flattening, and CSV parsing are clumsy declaratively and easier to un
 | Query Catalog | Run Report | §3.3 perform | `catalogGraph` (scopes the picker), `queryIri` (dropdown via `getCatalogQueries`, depends on `catalogGraph`), `substitutions` (fixedCollection of name/value pairs + raw-JSON escape hatch), Options: `contextGraph`, `parseCsv` toggle. |
 
 Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
+
+**Error detail surfacing (`cmemApiRequest`).** On a failed request the helper recovers CMEM's
+own error body and rethrows a `NodeApiError` whose **message** is the CMEM detail (e.g. the
+missing report parameters), instead of n8n's generic *"Bad request – please check your
+parameters"*. Two n8n behaviours make this necessary: (1) n8n only mines a *parsed object* body
+for a message — the Run Report path uses `Accept: text/csv` / `parseJson:false`, so CMEM's JSON
+error arrives as an unparsed **string** that the default extractor skips; and (2) for a 4xx,
+n8n overwrites the headline with its generic status message and demotes any detail to the
+(hidden) description. So the helper parses the body (handling RFC-7807 `title`/`detail`,
+`message`, `error_description`, `errors[]`), and passes the extracted string as the explicit
+`message`. **Body location:** n8n wraps the failure in a `NodeApiError` whose `.cause` is the
+underlying axios/legacy error; on the OAuth2 path that error carries the body on **`.error`**
+(its `.response` is stripped of `data`) and its `.message` is `"<status> - <json>"`. The helper
+therefore looks at `.error`/`.response.data`/`.response.body`/`.body`/`.data` on both the error
+and its `.cause`, and finally parses the JSON tail of the message. A compact-JSON fallback
+ensures something useful shows even for an unexpected field name. When nothing readable is found
+(e.g. a network error) it rethrows unchanged. The node catch tags the resulting `NodeApiError`
+with `itemIndex` (construction is idempotent, so the enriched message is preserved).
 
 ## 6. Output data contracts (→ `B6`, `B11`, `B14`)
 
@@ -173,15 +234,20 @@ Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
   end-to-end. **v2** adds `SPARQL` and `Query Catalog` resources — purely **additive** (new options
   and `execute` branches), so only the package semver minor increments, not the node `version`.
 - Package semver: `0.1.0` for v1 (pre-verification) → `1.0.0` once verified against a real CMEM.
+- **v0.4** (`B19`–`B24`) is the auth refactor onto `oAuth2Api` for n8n Cloud verification.
+  It is **breaking for existing saved credentials** (grant selector + username/password
+  removed; users re-enter the credential), but the **node `version` stays `1`** — the change
+  is in the credential, not the node interface. Package semver minor: `0.3.0` → `0.4.0`.
 
 ## 8. Risks & open questions
 
 | ID | Risk / question | Mitigation |
 | ---- | ----------------- | ------------ |
-| `R1` | n8n generic OAuth2 *clientCredentials* is buggy ([#16857](https://github.com/n8n-io/n8n/issues/16857)). | Custom token helper (§4); revisit `oAuth2Api` via `B15`. |
+| `R1` | **Superseded (v0.4).** v0.3 shipped a custom token helper, citing buggy generic OAuth2 *clientCredentials* ([#16857](https://github.com/n8n-io/n8n/issues/16857)). n8n Cloud verification **requires** the built-in `oAuth2Api`. | Adopt `extends: ['oAuth2Api']` + `clientCredentials` (§4, `B19`); remove the custom helper. If the upstream bug bites on self-hosted, document the n8n version floor; Cloud (the verification target) is unaffected. |
+| `R8` | Resource-owner **password** grant is not supported by `oAuth2Api` (grants: `authorizationCode`/`clientCredentials`/`pkce` only) and the docs' username/password `authenticate` examples are *generic* (Basic/header) auth, which CMEM rejects. | **Drop** the password grant in v0.4 (§4); client-credentials covers the automation use case. Reviewer invited a waiver request, but dropping is cleaner — note the rationale in the reviewer reply (`B24`). |
 | `R2` | **Resolved.** `executeOnPayload` 415s without a body; `/api/workflow/result` returns `204` when a workflow has no variable output (verified on docker.localhost). | Use `/api/workflow/result` (sync) + `/api/workflow/executeAsync` (async); `204` ⇒ `{ executed, hasResult: false }`. |
 | `R3` | **Resolved.** DP user endpoint is `/dataplatform/userinfo` (`/api/userinfo` 404s). n8n invokes `preAuthentication` **only** when the credential has a `hidden` `expirable` property; and the test `baseURL` resolves before `preAuthentication`. | Added hidden `expirable` `sessionToken`; `authenticate` injects it; test GETs `/userinfo` with `baseURL` from static `$credentials` fields. |
-| `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `tokenUrl` (§4). |
+| `R4` | Keycloak realm/host may differ from `cmem` default. | Overridable `accessTokenUrl` (derived from `baseUrl`, editable) (§4). |
 | `R5` | **Addressed.** Report CSV quoting / newlines / escaped quotes. | Quote-aware `parseCsv` + unit tests (`B14`); verified on a 52-row report on docker.localhost. |
 | `R6` | **Resolved.** License is **MIT** (confirmed with eccenca). | MIT — aligns with the n8n ecosystem and keeps Creator-Portal verification (`R7`) open. |
 | `R7` | n8n verified-community-node requirements (no runtime deps, GitHub-Actions provenance publish). | Track in `B17`. |

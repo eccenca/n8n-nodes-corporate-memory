@@ -3,8 +3,8 @@
 An [n8n](https://n8n.io) community node for
 [eccenca Corporate Memory (CMEM)](https://eccenca.com).
 
-Provides a Corporate Memory credential (OAuth2 **client-credentials** and
-**password** grants) and a **Corporate Memory** node with three resources:
+Provides a Corporate Memory credential (OAuth2 **client-credentials** grant, via
+n8n's built-in OAuth2) and a **Corporate Memory** node with three resources:
 **Workflow** (execute DataIntegration workflows), **SPARQL** (SELECT/ASK queries),
 and **Query Catalog** (list and run saved, parameterized queries). See
 [tasks/spec.md](tasks/spec.md) and [tasks/backlog.md](tasks/backlog.md).
@@ -20,20 +20,28 @@ In a self-hosted n8n: **Settings → Community Nodes → Install** and enter
 
 ## Credentials
 
-Create a **Corporate Memory API** credential:
+Create an **eccenca Corporate Memory OAuth2 API** credential. It extends n8n's
+built-in OAuth2 and uses the **client-credentials** grant, so n8n obtains, caches
+and refreshes the access token for you (no interactive sign-in).
 
 | Field | Notes |
 | ----- | ----- |
-| Grant Type | `Client Credentials` (default) or `Password` |
-| CMEM Base URL | e.g. `https://cmem.example.com` (no trailing slash) |
 | Client ID | OAuth2 client (e.g. the cmemc service-account client) |
-| Client Secret | required for client credentials; optional for a public password-grant client |
-| Username / Password | shown for the password grant only |
-| OAuth Token URL | optional override; defaults to `{Base URL}/auth/realms/cmem/protocol/openid-connect/token` |
+| Client Secret | client secret of the (confidential) service-account client |
+| Base URL | e.g. `https://cmem.example.com` (trailing slash optional) |
+| OAuth Token URL | optional; leave empty to derive `{Base URL}/auth/realms/cmem/protocol/openid-connect/token`; set it for a non-default Keycloak realm or host |
 | DataIntegration / DataPlatform Base URL | optional overrides; default to `{Base URL}/dataintegration` and `{Base URL}/dataplatform` |
+
+> Field order follows n8n's OAuth2 credential layout: the inherited fields (Client ID,
+> Client Secret, plus *Send Additional Body Properties* and *Allowed HTTP Request Domains*)
+> render first, then the CMEM-specific fields.
 
 Use **Test** in the credential dialog to verify the token can be obtained and the
 DataPlatform API is reachable.
+
+> The resource-owner **password** grant is not offered: n8n's built-in OAuth2
+> supports only the `authorizationCode`, `clientCredentials` and `pkce` grants, and
+> the client-credentials service-account flow covers the automation use case.
 
 ## Operations
 

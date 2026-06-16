@@ -3,6 +3,9 @@
 > Companion to [spec.md](./spec.md). Each item links to the spec section (`§X`) it implements and
 > any risk (`R#`) it addresses. This file is the **single source of truth for status** — check
 > items off here as they land. Convention: `[ ] B# — title (→ spec §X, R#)`.
+>
+> **Note (v0.4):** the **auth** design in `B2`/`B3`/`B4` (custom token helper + grant
+> selector + password grant) is superseded by the `oAuth2Api` refactor — see `B19`–`B24`.
 
 ## v1 — Foundation & Workflow execution
 
@@ -82,11 +85,112 @@
   toggle returns the raw CSV string instead. Unit-tested (quoting / embedded comma / newline /
   escaped quotes).
 
+## v0.4 — oAuth2Api refactor (n8n Cloud verification feedback)
+
+> The Cloud reviewer requires the credential to extend n8n's built-in `oAuth2Api`
+> (`clientCredentials`) instead of the custom token helper. This supersedes the **auth**
+> parts of `B2`/`B3`/`B4` and resolves `B15`. The **password grant is dropped** (`R8`) — it
+> is not supported by `oAuth2Api` and CMEM rejects the generic Basic/header alternative.
+> Spec §4 rewritten. Order: B19 → B20 → B21 → B22 → B23 → B24.
+>
+> **Verification rename:** lint rule `cred-class-oauth2-naming` forces an `OAuth2` marker on
+> any `oAuth2Api`-extending credential, so the credential was renamed
+> `CorporateMemoryApi`/`corporateMemoryApi` → `CorporateMemoryOAuth2Api`/`corporateMemoryOAuth2Api`
+> (displayName *eccenca Corporate Memory OAuth2 API*), and the file/`n8n.credentials` path with it.
+>
+> **Field labels/order (post-review tweak):** renamed *CMEM Base URL* → *Base URL*; moved the
+> token URL to the bottom by hiding inherited `accessTokenUrl` and re-exposing it as the
+> optional custom `tokenUrl` field. n8n appends custom fields after all inherited ones
+> (`mergeNodeProperties`, verified), so *Base URL* cannot be the absolute first field —
+> rendered order is Client ID · Client Secret · Send Additional Body Properties · Allowed HTTP
+> Request Domains · Base URL · OAuth Token URL · DI/DP Base URL. See spec §4 "Field order".
+
+- [x] **B19 — Credential extends `oAuth2Api` (clientCredentials)** (→ §4, `R1`, `R8`)
+  Rewrote `credentials/CorporateMemoryOAuth2Api.credentials.ts`: `extends = ['oAuth2Api']`;
+  hidden overrides `grantType=clientCredentials`, `scope=''`, `authentication='body'`,
+  `authQueryParameters=''` (inherited `authUrl` stays hidden via oAuth2Api's own
+  grant-type displayOptions). `accessTokenUrl` = **visible/editable** string, default
+  `'={{$self["baseUrl"]}}/auth/realms/cmem/protocol/openid-connect/token'` — prefilled from
+  `baseUrl` but user-overridable (`R4`); fallback (hidden ternary + `tokenUrl` field) documented
+  in spec §4 if the visible default mis-renders in the UI (validate in B22). Kept custom
+  `baseUrl` (required), `diBaseUrl`, `dpBaseUrl`; inherited `clientId`/`clientSecret` visible.
+  Removed the `grantType` options selector, `username`, `password`, `tokenUrl`, `sessionToken`,
+  `preAuthentication`, `authenticate`. Kept the `eccenca` lowercase-brand lint exception.
+- [x] **B20 — `GenericFunctions` use n8n-managed auth** (→ §4, `R1`)
+  Removed `getCmemToken`, `tokenCache`, `clearCmemTokenCache`, `resolveTokenUrl`,
+  `buildTokenRequestBody`, `TOKEN_EXPIRY_SKEW_MS`, `ApplicationError` import, and the
+  `TokenResponse`/`TokenCacheEntry` interfaces. Narrowed `CorporateMemoryCredentials` to
+  `{ baseUrl; clientId?; clientSecret?; diBaseUrl?; dpBaseUrl? }` and `CmemRequester` to
+  `{ helpers: { httpRequestWithAuthentication(credentialsType, options) } }`. `cmemApiRequest`
+  → `helpers.httpRequestWithAuthentication('corporateMemoryOAuth2Api', options)` (no manual
+  Bearer). Kept `resolveComponentBaseUrl`, `normalizeBaseUrl`, all SPARQL/CSV/substitution helpers.
+- [x] **B21 — Node wiring** (→ §5)
+  No behaviour change; the `this as unknown as CmemRequester` cast in `execute()` and the four
+  `loadOptions` now resolves to `httpRequestWithAuthentication`. `getCredentials` still fetched
+  for base-URL resolution; `NodeApiError` mapping unchanged. Credential name updated in the
+  node's `credentials[]`.
+  **Idiomatic-alignment pass (post-review):** reviewed `n8n-nodes-base` self-hosted analogs —
+  `Elasticsearch`, `Gitlab`, `Grafana` (all store a base/server URL in the credential).
+  Refactored the helpers to the standard **`this`-based** shape: `cmemApiRequest`/
+  `listQueryCatalogGraphs`/`listCatalogQueries` take `this: IExecuteFunctions | ILoadOptionsFunctions`
+  (`CmemFunctions`), read the credential via `this.getCredentials(…)`, and are invoked with
+  `.call(this, …)`. Dropped the custom `CmemRequester` type and all `requester`/`credentials`
+  threading from the node. This both fixes the loadOptions failure ("this.getNode is not a
+  function") and matches how every core node wires authenticated requests. See spec §4.
+  **Validation findings:**
+  - Request wiring matches `gitlabApiRequest`/`grafanaApiRequest` exactly: `this`-based, read
+    creds internally, derive base URL from a credential field with a trailing-slash strip
+    (`server.replace(/\/$/, '')` / `tolerateTrailingSlash`), `helpers.…WithAuthentication.call(this, …)`.
+    (Those two use the legacy `requestWithAuthentication`; we use the modern
+    `httpRequestWithAuthentication` — preferred for new nodes.)
+  - Credential matches `GitlabOAuth2Api`: hidden `grantType`, base/`server` field, hidden
+    `accessTokenUrl` derived via `={{$self["…"]}}`, hidden `scope`/`authQueryParameters`/
+    `authentication: 'body'`. (We add an optional editable `tokenUrl` override + field reorder;
+    GitLab derives directly from `server` with no override — both valid.)
+  - **`version: 1` confirmed idiomatic:** plain number used by 286 core nodes (incl. Grafana);
+    arrays are only for multi-version nodes. **No conversion needed** — kept `version: 1`.
+- [x] **B22 — Credential test** (→ §4, `R3`)
+  Kept the declarative `test` GET `{dp}/userinfo`; removed the `sessionToken`/`preAuthentication`
+  workaround. **Pending manual check:** verify Test/save in the n8n UI against a real CMEM
+  (`task dev`), and confirm the visible `accessTokenUrl` default renders editably (else apply
+  the B19 fallback).
+- [x] **B23 — Tests** (→ §9)
+  Rewrote `test/CorporateMemoryOAuth2Api.test.ts` (extends `oAuth2Api`; hidden
+  `grantType`/`authentication`; visible derived `accessTokenUrl`; password fields & `sessionToken`
+  asserted absent) and the auth parts of `test/GenericFunctions.test.ts` / the node test (deleted
+  the token-cache/`getCmemToken` suites; assert `cmemApiRequest` →
+  `httpRequestWithAuthentication('corporateMemoryOAuth2Api', …)` with the resolved URL + method).
+  SPARQL/CSV/substitution suites kept green. **31 tests pass; `task lint` + `task build` clean.**
+- [x] **B24 — Docs + reviewer reply** (→ §1)
+  Updated the README credentials section (client-credentials only; new credential name;
+  `baseUrl`/derived `accessTokenUrl`/`clientId`/`clientSecret`, optional `diBaseUrl`/`dpBaseUrl`;
+  password-grant note). `task lint` + `task test` (31) + `task build` clean. Reviewer reply
+  drafted below.
+  **Left to the release step (not done here):** `package.json` version bump to `0.4.0` and the
+  auto-generated `CHANGELOG.md` are produced by `task release` (`n8n-node release` / release-it),
+  the same flow that cut 0.3.0 — don't hand-edit. Then publish (npm, with provenance) and reply
+  to the reviewer.
+
+  **Draft reviewer reply:**
+  > Thanks for the review. v0.4.0 refactors the credential to **extend n8n's built-in
+  > `oAuth2Api`** using the **client_credentials** grant — n8n now performs the token exchange,
+  > caching and refresh; our custom `getCmemToken` helper and in-memory cache are removed, and
+  > all requests go through `httpRequestWithAuthentication`. The credential is renamed to
+  > *eccenca Corporate Memory OAuth2 API* to satisfy the OAuth2 naming lint rule.
+  >
+  > We **dropped the resource-owner password grant** rather than request a waiver: `oAuth2Api`
+  > supports only `authorizationCode`/`clientCredentials`/`pkce`, and CMEM/Keycloak only accepts
+  > a Keycloak-issued Bearer JWT (not the HTTP-Basic style of the generic username/password
+  > `authenticate` examples), so a password grant would have required reintroducing custom token
+  > code. The client-credentials service-account flow covers the automation use case. Published
+  > as v0.4.0; ready for re-review.
+
 ## v.later
 
-- [ ] **B15 — `oAuth2Api` clientCredentials variant** (→ §4, §7, `R1`)
-  Revisit `extends: ['oAuth2Api']` once [n8n#16857](https://github.com/n8n-io/n8n/issues/16857) is
-  fixed; offer as an alternative credential / node version bump.
+- [x] **B15 — `oAuth2Api` clientCredentials variant** (→ §4, §7, `R1`)
+  **Done via `B19`** (v0.4) — adopted `extends: ['oAuth2Api']` with `clientCredentials`,
+  ahead of the original "once [n8n#16857](https://github.com/n8n-io/n8n/issues/16857) is fixed"
+  plan, because n8n Cloud verification requires the built-in credential.
 - [ ] **B16 — Additional CMEM surface** (→ §2)
   SPARQL CONSTRUCT/ASK/UPDATE; graph-store read/write; vocabulary/SHACL ops; trigger node;
   async workflow result-polling + cancellation via the activity API
@@ -103,8 +207,9 @@
   - [x] Publish `@eccenca/n8n-nodes-corporate-memory` to npm, then pass
     `npx @n8n/scan-community-package @eccenca/n8n-nodes-corporate-memory`.
   - [x] Consistent author/maintainer identity across npm + GitHub.
-  - [ ] Nice-to-have: `CorporateMemory.node.json` codex (categories + doc links) and an example
-    workflow in the README.
+  - [x] `CorporateMemory.node.json` codex (categories Data & Storage / Development / Analytics,
+    README doc links, search aliases). Ships in `dist`; lint + scan still pass.
+  - [ ] Nice-to-have: an example workflow in the README.
   - [ ] Submit via the [n8n Creator Portal](https://creators.n8n.io) and pass review.
 - [ ] **B18 — Resolve open questions** (→ §8)
   Remaining: obtain a demo/staging CMEM for repeatable **CI** verification. (`R2`/`R3`/`R6`
