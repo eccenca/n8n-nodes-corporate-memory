@@ -1,5 +1,5 @@
 {
-	"node": "@eccenca/n8n-nodes-corporate-memory",
+	"node": "@eccenca/n8n-nodes-corporate-memory.corporateMemory",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Data & Storage", "Development", "Analytics"],
