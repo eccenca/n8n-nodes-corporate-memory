@@ -101,7 +101,7 @@ JWT); DI declares no scheme but production requires the same `Authorization: Bea
 > v0.3 custom-helper design is preserved in git history.
 
 Single credential `CorporateMemoryOAuth2Api` (`name: 'corporateMemoryOAuth2Api'`,
-displayName *eccenca Corporate Memory OAuth2 API*), `extends: ['oAuth2Api']`, grant
+displayName *Eccenca Corporate Memory OAuth2 API*), `extends: ['oAuth2Api']`, grant
 `clientCredentials` (CMEM service-account client). n8n injects
 `Authorization: Bearer <token>` automatically for every request issued via
 `httpRequestWithAuthentication('corporateMemoryOAuth2Api', …)`.
@@ -110,6 +110,11 @@ displayName *eccenca Corporate Memory OAuth2 API*), `extends: ['oAuth2Api']`, gr
 > `oAuth2Api`-extending credential to carry an `OAuth2` marker, so the class/`name`/
 > `displayName` were renamed from `CorporateMemoryApi`/`corporateMemoryApi` (v0.3). This is
 > an additional reason v0.4 is breaking for saved credentials — they must be recreated.
+>
+> **Title case (v0.4.2).** The displayName is *Eccenca …*, not the lowercase brand spelling:
+> the package scanner enforces `cred-class-field-display-name-miscased` with inline ESLint
+> config disabled, so a `eslint-disable-next-line` comment in the source is ignored. Only
+> the credential-picker label changes; `name` (and therefore saved credentials) is untouched.
 
 **Why client-credentials only — password grant dropped (`R8`).** n8n's `oAuth2Api`
 supports exactly three grants — `authorizationCode`, `clientCredentials`, `pkce`
@@ -195,6 +200,13 @@ SPARQL row-flattening, and CSV parsing are clumsy declaratively and easier to un
 | Query Catalog | Run Report | §3.3 perform | `catalogGraph` (scopes the picker), `queryIri` (dropdown via `getCatalogQueries`, depends on `catalogGraph`), `substitutions` (fixedCollection of name/value pairs + raw-JSON escape hatch), Options: `contextGraph`, `parseCsv` toggle. |
 
 Shared: `Continue On Fail` support; CMEM error bodies mapped to `NodeApiError`.
+
+**Icon (v0.4.2, `B26`).** Node and credential both use the themed form
+`icon: { light: 'file:corporateMemory.svg', dark: 'file:corporateMemoryDark.svg' }`
+(n8n's `Themed<IconFile>`). The dark variant is the same path geometry with the eccenca brand
+orange `#F39200` lifted to `#FFA929` (identical hue/saturation, +10% lightness) for n8n's dark
+canvas. Both SVGs exist twice — under `nodes/CorporateMemory/` and `credentials/` — because the
+build copies static files per output directory.
 
 **Error detail surfacing (`cmemApiRequest`).** On a failed request the helper recovers CMEM's
 own error body and rethrows a `NodeApiError` whose **message** is the CMEM detail (e.g. the

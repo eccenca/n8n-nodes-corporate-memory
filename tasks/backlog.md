@@ -185,6 +185,26 @@
   > code. The client-credentials service-account flow covers the automation use case. Published
   > as v0.4.0; ready for re-review.
 
+## v0.4.2 — verification round 3 (credential display name)
+
+- [x] **B25 — Title-case the credential displayName** (→ §4)
+  Reviewer [MEDIUM]: the package scanner runs `cred-class-field-display-name-miscased` with
+  inline ESLint config **disabled**, so the `eslint-disable-next-line` comment for the
+  lowercase brand spelling was ignored. Dropped the disable comment and changed
+  `displayName` *eccenca Corporate Memory OAuth2 API* → ***Eccenca** Corporate Memory OAuth2
+  API*. Only the credential-picker label changes; `name` (`corporateMemoryOAuth2Api`) is
+  untouched, so **saved credentials keep working**. Added a regression test asserting the
+  title-cased value; README + spec §4 updated.
+- [x] **B26 — Light/dark icon variants** (→ §5)
+  Reviewer [LOW], recommendation. Added `corporateMemoryDark.svg` (same path geometry, brand
+  orange `#F39200` → `#FFA929`: same hue/saturation, +10% lightness) in **both**
+  `nodes/CorporateMemory/` and `credentials/` — the build copies static files per output dir —
+  and switched node + credential to `icon: { light: 'file:corporateMemory.svg', dark:
+  'file:corporateMemoryDark.svg' }`. Tests assert both themed icons; all four SVGs land in
+  `dist/`. Rendering checked on `#fff` and on n8n's dark canvas (`#2d2e3a` panel).
+  **If design has an official dark-theme orange, swap the `fill` in the two dark SVGs** — that
+  is the only value to change.
+
 ## v.later
 
 - [x] **B15 — `oAuth2Api` clientCredentials variant** (→ §4, §7, `R1`)

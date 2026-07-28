@@ -20,7 +20,7 @@ In a self-hosted n8n: **Settings → Community Nodes → Install** and enter
 
 ## Credentials
 
-Create an **eccenca Corporate Memory OAuth2 API** credential. It extends n8n's
+Create an **Eccenca Corporate Memory OAuth2 API** credential. It extends n8n's
 built-in OAuth2 and uses the **client-credentials** grant, so n8n obtains, caches
 and refreshes the access token for you (no interactive sign-in).
 

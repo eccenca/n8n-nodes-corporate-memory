@@ -3,9 +3,18 @@ import { CorporateMemoryOAuth2Api } from '../credentials/CorporateMemoryOAuth2Ap
 describe('CorporateMemoryOAuth2Api credential', () => {
 	const credential = new CorporateMemoryOAuth2Api();
 
-	it('has the expected name and icon', () => {
+	it('has the expected name and themed icon', () => {
 		expect(credential.name).toBe('corporateMemoryOAuth2Api');
-		expect(credential.icon).toBe('file:corporateMemory.svg');
+		expect(credential.icon).toEqual({
+			light: 'file:corporateMemory.svg',
+			dark: 'file:corporateMemoryDark.svg',
+		});
+	});
+
+	// The package scanner runs cred-class-field-display-name-miscased with inline
+	// ESLint config disabled, so the display name must stay title-cased.
+	it('uses a title-cased display name', () => {
+		expect(credential.displayName).toBe('Eccenca Corporate Memory OAuth2 API');
 	});
 
 	it("extends n8n's built-in oAuth2Api credential", () => {

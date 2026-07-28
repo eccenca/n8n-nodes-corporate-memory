@@ -6,6 +6,16 @@ const credentials = {
 	clientSecret: 'secret',
 };
 
+describe('CorporateMemory.description', () => {
+	it('declares light and dark icon variants', () => {
+		const node = new CorporateMemory();
+		expect(node.description.icon).toEqual({
+			light: 'file:corporateMemory.svg',
+			dark: 'file:corporateMemoryDark.svg',
+		});
+	});
+});
+
 describe('CorporateMemory.loadOptions', () => {
 	const workflowInfo = [
 		{ id: 'wf-a', label: 'WF A', projectId: 'p1', projectLabel: 'Project One' },

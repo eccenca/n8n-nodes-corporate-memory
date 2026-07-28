@@ -52,7 +52,7 @@ export class CorporateMemory implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'eccenca Corporate Memory',
 		name: 'corporateMemory',
-		icon: 'file:corporateMemory.svg',
+		icon: { light: 'file:corporateMemory.svg', dark: 'file:corporateMemoryDark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',

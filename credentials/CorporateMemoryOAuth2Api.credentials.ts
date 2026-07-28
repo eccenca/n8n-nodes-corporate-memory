@@ -17,12 +17,18 @@ export class CorporateMemoryOAuth2Api implements ICredentialType {
 
 	extends = ['oAuth2Api'];
 
-	// eslint-disable-next-line n8n-nodes-base/cred-class-field-display-name-miscased -- "eccenca" is an intentionally lowercase brand name
-	displayName = 'eccenca Corporate Memory OAuth2 API';
+	// Title-cased "Eccenca" (not the lowercase brand spelling) because the n8n
+	// package scanner enforces cred-class-field-display-name-miscased with inline
+	// ESLint config disabled, so a disable comment here is not honoured.
+	displayName = 'Eccenca Corporate Memory OAuth2 API';
 
 	documentationUrl = 'https://documentation.eccenca.com/';
 
-	icon = 'file:corporateMemory.svg' as const;
+	// Themed icon: the dark variant lifts the brand orange for n8n's dark canvas.
+	icon = {
+		light: 'file:corporateMemory.svg',
+		dark: 'file:corporateMemoryDark.svg',
+	} as const;
 
 	properties: INodeProperties[] = [
 		// --- Hidden overrides of inherited oAuth2Api fields ---------------------
