@@ -20,9 +20,25 @@ tasks:
     cmds:
       - npm run build
 
+  check-node:
+    desc: Verify the active Node.js can run a local n8n
+    silent: true
+    cmds:
+      - |
+        # Lower bound: n8n declares engines ">=22.22".
+        # Upper bound: n8n native deps (isolated-vm, @confluentinc/kafka-javascript)
+        # do not compile against Node 25+ V8 headers, so "npx n8n" exits 1.
+        ok="$(node -p 'const [a,b] = process.versions.node.split(".").map(Number); (a >= 22 && a <= 24 && !(a === 22 && b < 22)) ? "yes" : "no"')"
+        if [ "$ok" != "yes" ]; then
+          echo "Node $(node -v) cannot run a local n8n (need >=22.22 and <25)." >&2
+          echo "Fix: run 'nvm use' in this directory (.nvmrc pins 24), then retry." >&2
+          exit 1
+        fi
+
   dev:
     desc: Run a local n8n with the node hot-reloaded (http://localhost:5678)
     cmds:
+      - task: check-node
       - npm run dev
 
   lint:
